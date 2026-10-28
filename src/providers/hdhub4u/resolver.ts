@@ -127,7 +127,49 @@ export async function resolveHubCloudStream(
     }
   }
 
-  // Priority 2: Direct Cloudflare R2 / S3 storage link (.mkv / .mp4 presigned URL)
+  // Priority 2: 10Gbps Server / Pixel HubCloud / FSL Server (Google CDN / High-speed Direct)
+  for (const a of allLinks) {
+    const href = a.getAttribute('href') || '';
+    const text = a.text.toLowerCase();
+    if (
+      href.includes('pixel.hubcloud.') ||
+      href.includes('cloudflarestorage.com') ||
+      href.includes('.r2.dev') ||
+      text.includes('10gbps') ||
+      text.includes('fsl server') ||
+      text.includes('watch online')
+    ) {
+      try {
+        const destRes = await client.get(href, {
+          maxRedirects: 5,
+          timeout: 7000,
+        });
+        const finalUrl = destRes.request?.res?.responseUrl || destRes.config?.url || '';
+        // Check if final URL has ?link=https://...
+        const linkMatch = finalUrl.match(/[?&]link=(https?:\/\/[^&]+)/);
+        if (linkMatch) {
+          const directUrl = decodeURIComponent(linkMatch[1]);
+          return {
+            url: directUrl,
+            label: '10Gbps Fast Stream',
+          };
+        }
+        if (
+          finalUrl.includes('googleusercontent.com') ||
+          finalUrl.includes('cloudflarestorage.com') ||
+          finalUrl.includes('.mkv') ||
+          finalUrl.includes('.mp4')
+        ) {
+          return {
+            url: finalUrl,
+            label: '10Gbps Fast Stream',
+          };
+        }
+      } catch {}
+    }
+  }
+
+  // Priority 3: Direct Cloudflare R2 / S3 storage link (.mkv / .mp4 presigned URL)
   for (const a of allLinks) {
     const href = a.getAttribute('href') || '';
     if (href.includes('cloudflarestorage.com') || href.includes('.r2.dev')) {
@@ -136,15 +178,6 @@ export async function resolveHubCloudStream(
         label: 'Cloudflare Fast Stream',
       };
     }
-  }
-
-  // Priority 3: PixelDrain API Direct Stream
-  const pixelMatch = step2Res.data.match(/https?:\/\/pixeldrain\.(?:com|dev)\/(?:u|api\/file)\/([a-zA-Z0-9_-]+)/);
-  if (pixelMatch) {
-    return {
-      url: `https://pixeldrain.com/api/file/${pixelMatch[1]}?download`,
-      label: 'PixelDrain Stream',
-    };
   }
 
   // Priority 4: Look for any direct media file (.mkv, .mp4, .webm)
@@ -156,6 +189,15 @@ export async function resolveHubCloudStream(
         label: a.text.trim() || 'Direct Video Stream',
       };
     }
+  }
+
+  // Priority 5: PixelDrain API Direct Stream (Lowest priority due to regional ISP blocks)
+  const pixelMatch = step2Res.data.match(/https?:\/\/pixeldrain\.(?:com|dev)\/(?:u|api\/file)\/([a-zA-Z0-9_-]+)/);
+  if (pixelMatch) {
+    return {
+      url: `https://pixeldrain.com/api/file/${pixelMatch[1]}?download`,
+      label: 'PixelDrain Stream',
+    };
   }
 
   throw new Error('No playable stream mirrors found on HubCloud');

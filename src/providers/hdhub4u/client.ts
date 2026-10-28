@@ -1,17 +1,15 @@
 import axios from 'axios';
 import { parse } from 'node-html-parser';
-import { MediaProvider } from '../base';
 import {
   CatalogItem,
   MediaDetails,
-  MediaType,
   PlaybackSource,
-  Release,
+  Release
 } from '../../types/models';
+import { cleanDisplayTitle, cleanMovieTitle } from '../../utils/title';
+import { MediaProvider } from '../base';
 import { getActiveHDHub4uDomain } from './domain';
 import { resolveShortenerUrl } from './resolver';
-import { parseSeasonEpisode, formatEpisodeTitle } from '../../utils/seasonEpisode';
-import { cleanMovieTitle, cleanDisplayTitle } from '../../utils/title';
 
 const BROWSER_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
@@ -220,94 +218,117 @@ export class HDHub4uProvider implements MediaProvider {
       'HDHub4u Stream';
     const fallbackTitle = cleanDisplayTitle(rawTitle);
 
+    const postSeasonMatch = rawTitle.match(/season\s*(\d+)/i) || postUrl.match(/season-(\d+)/i);
+    const defaultSeason = postSeasonMatch ? parseInt(postSeasonMatch[1], 10) : undefined;
+
     const entry = root.querySelector('.entry-content') || root;
-    const links = entry.querySelectorAll('a[href]');
+    const blocks = entry.querySelectorAll('h2, h3, h4, h5, p, div');
 
-    for (const el of links) {
-      const href = el.getAttribute('href');
-      if (!href) continue;
+    let currentEpisode: number | undefined;
+    let activeSeason: number | undefined = defaultSeason;
 
-      // Must be a recognized download / shortener mirror
-      const isDlHost =
-        href.includes('hubcloud.') ||
-        href.includes('hubdrive.') ||
-        href.includes('greenmotors.') ||
-        href.includes('greenmountmotors.') ||
-        href.includes('technical-now.') ||
-        href.includes('pixeldrain.') ||
-        href.includes('hblinks.') ||
-        (href.includes('/archives/') && !href.includes('hdhub4u'));
+    for (const el of blocks) {
+      const text = el.text.trim();
 
-      if (!isDlHost) continue;
+      // Check if this block defines a Season
+      const seasonHeadingMatch = text.match(/\b(?:Season|S)[\s.:_-]*(\d+)\b/i);
+      if (seasonHeadingMatch && !text.includes('Pack') && text.length < 50) {
+        activeSeason = parseInt(seasonHeadingMatch[1], 10);
+      }
 
-      const linkText = el.text.trim();
-      const parent = el.parentNode;
-      const parentText = parent ? parent.text.trim() : '';
-      const combined = `${parentText} ${linkText}`;
-
-      // Ignore genre, cast or ad-wrapped text
-      if (/genre:|stars:|creator:|director:|trailer/i.test(combined)) {
+      // Check if this block defines an Episode
+      const epHeadingMatch = text.match(/\b(?:EPiSODE|Episode|Ep|EP)[\s.:_-]*(\d+)\b/i);
+      if (epHeadingMatch && text.length < 50) {
+        currentEpisode = parseInt(epHeadingMatch[1], 10);
         continue;
       }
 
+      // Check for download links in this block
+      const links = el.querySelectorAll('a[href]');
+      const dlLinks = links.filter((l) => {
+        const href = l.getAttribute('href') || '';
+        return (
+          href.includes('hubcloud.') ||
+          href.includes('hubdrive.') ||
+          href.includes('greenmotors.') ||
+          href.includes('greenmountmotors.') ||
+          href.includes('technical-now.') ||
+          href.includes('pixeldrain.') ||
+          href.includes('hblinks.') ||
+          (href.includes('/archives/') && !href.includes('hdhub4u'))
+        );
+      });
+
+      if (dlLinks.length === 0) continue;
+
+      // Filter out ZIP / RAR / 7Z archives - cannot be streamed
+      if (
+        /\b(?:zip|rar|7z|tar)\b/i.test(text) ||
+        /\.(?:zip|rar|7z|tar)(?:\?|$)/i.test(text)
+      ) {
+        continue;
+      }
+
+      // Determine quality
       let quality = '1080p FHD';
       let resolution = 1080;
-
-      if (/\b(?:4k|2160p|uhd)\b/i.test(combined)) {
+      if (/\b(?:4k|2160p|uhd)\b/i.test(text)) {
         quality = '4K UHD';
         resolution = 2160;
-      } else if (/\b1080p\b/i.test(combined)) {
+      } else if (/\b1080p\b/i.test(text)) {
         quality = '1080p FHD';
         resolution = 1080;
-      } else if (/\b720p\b/i.test(combined)) {
+      } else if (/\b720p\b/i.test(text)) {
         quality = '720p HD';
         resolution = 720;
-      } else if (/\b480p\b/i.test(combined)) {
+      } else if (/\b480p\b/i.test(text)) {
         quality = '480p';
         resolution = 480;
       }
 
-      const sizeMatch = combined.match(/(\d+(?:\.\d+)?\s*(?:GB|MB|GiB|MiB))/i);
+      const sizeMatch = text.match(/(\d+(?:\.\d+)?\s*(?:GB|MB|GiB|MiB))/i);
       const sizeStr = sizeMatch ? sizeMatch[1] : undefined;
 
-      const { season, episode, isPack } = parseSeasonEpisode(combined, fallbackTitle);
+      const isPack = /pack|complete/i.test(text);
 
       let filename: string;
-      if (episode !== undefined) {
-        filename = formatEpisodeTitle(combined, quality, season, episode);
+      if (currentEpisode !== undefined && !isPack) {
+        filename = `${fallbackTitle} · Episode ${currentEpisode} (${quality}${sizeStr ? ` [${sizeStr}]` : ''})`;
       } else if (isPack && sizeStr) {
         filename = `${fallbackTitle} · Season Pack (${quality} [${sizeStr}])`;
-      } else if (linkText.length > 3 && !/^(drive|watch|instant|download)$/i.test(linkText)) {
-        filename = cleanDisplayTitle(linkText);
-      } else if (parentText.length > 3 && !/^(drive|watch|instant|download)$/i.test(parentText)) {
-        filename = cleanDisplayTitle(parentText);
       } else {
-        filename = `${fallbackTitle} (${quality})`;
+        const cleanedBlock = cleanDisplayTitle(text.replace(/drive|instant|watch|download/gi, '').trim());
+        filename = cleanedBlock ? `${fallbackTitle} · ${cleanedBlock} (${quality})` : `${fallbackTitle} (${quality})`;
       }
+
+      const mirrors = dlLinks
+        .map((l) => ({
+          label: l.text.trim() || `Mirror (${quality})`,
+          resolverUrl: l.getAttribute('href')!,
+          directFile: false,
+        }))
+        .filter((m) => !/\.(?:zip|rar|7z|tar)(?:\?|$)/i.test(m.resolverUrl));
+
+      if (mirrors.length === 0) continue;
 
       releases.push({
         provider: 'hdhub4u',
         filename,
         quality,
         resolution,
-        season,
-        episode,
+        season: isPack ? undefined : activeSeason,
+        episode: isPack ? undefined : currentEpisode,
         size: sizeStr,
-        mirrors: [
-          {
-            label: `HDHub4u (${quality})`,
-            resolverUrl: href,
-            directFile: false,
-          },
-        ],
+        mirrors,
       });
     }
 
+    // Deduplicate by filename and resolver URL
     const seen = new Set<string>();
     const unique = releases.filter((r) => {
-      const url = r.mirrors[0]?.resolverUrl;
-      if (!url || seen.has(url)) return false;
-      seen.add(url);
+      const key = `${r.filename}_${r.mirrors[0]?.resolverUrl}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
       return true;
     });
 
@@ -315,21 +336,30 @@ export class HDHub4uProvider implements MediaProvider {
   }
 
   async resolveStream(release: Release): Promise<PlaybackSource> {
-    const mirror = release.mirrors[0];
-    if (!mirror) {
+    if (!release.mirrors || release.mirrors.length === 0) {
       throw new Error('No mirror available on release');
     }
 
-    const { url, label } = await resolveShortenerUrl(mirror.resolverUrl);
+    let lastError: any = null;
+    for (const mirror of release.mirrors) {
+      try {
+        const { url, label } = await resolveShortenerUrl(mirror.resolverUrl);
+        if (url) {
+          return {
+            provider: 'hdhub4u',
+            url,
+            sourceLabel: `HDHub4u · ${label}`,
+            title: release.filename,
+            headers: {
+              'User-Agent': BROWSER_UA,
+            },
+          };
+        }
+      } catch (err) {
+        lastError = err;
+      }
+    }
 
-    return {
-      provider: 'hdhub4u',
-      url,
-      sourceLabel: `HDHub4u · ${label}`,
-      title: release.filename,
-      headers: {
-        'User-Agent': BROWSER_UA,
-      },
-    };
+    throw lastError || new Error('Could not resolve any mirror for release');
   }
 }

@@ -7,10 +7,13 @@ interface AppState {
   favorites: FavoriteItem[];
   preferredQuality: '4K' | '1080p' | '720p' | 'Auto';
   preferredLanguage: string;
+  skipSeconds: number; // 5, 10, 15, 30
   isLoaded: boolean;
 
   loadStorage: () => Promise<void>;
   saveProgress: (item: Omit<WatchHistoryItem, 'timestamp'>) => Promise<void>;
+  getProgress: (mediaId: string, season?: number, episode?: number) => WatchHistoryItem | undefined;
+  setSkipSeconds: (seconds: number) => Promise<void>;
   toggleFavorite: (item: Omit<FavoriteItem, 'addedAt'>) => Promise<void>;
   isFavorite: (mediaId: string) => boolean;
   clearHistory: () => Promise<void>;
@@ -21,18 +24,21 @@ export const useAppStore = create<AppState>((set, get) => ({
   favorites: [],
   preferredQuality: 'Auto',
   preferredLanguage: 'Hindi',
+  skipSeconds: 10,
   isLoaded: false,
 
   loadStorage: async () => {
     try {
-      const [historyJson, favsJson] = await Promise.all([
+      const [historyJson, favsJson, skipStr] = await Promise.all([
         AsyncStorage.getItem('@cinebox_history'),
         AsyncStorage.getItem('@cinebox_favorites'),
+        AsyncStorage.getItem('@cinebox_skip_seconds'),
       ]);
 
       set({
         watchHistory: historyJson ? JSON.parse(historyJson) : [],
         favorites: favsJson ? JSON.parse(favsJson) : [],
+        skipSeconds: skipStr ? parseInt(skipStr, 10) : 10,
         isLoaded: true,
       });
     } catch {
@@ -40,12 +46,37 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
+  setSkipSeconds: async (seconds: number) => {
+    set({ skipSeconds: seconds });
+    await AsyncStorage.setItem('@cinebox_skip_seconds', seconds.toString());
+  },
+
+  getProgress: (mediaId: string, season?: number, episode?: number) => {
+    const history = get().watchHistory;
+    if (season !== undefined && episode !== undefined) {
+      return history.find(
+        (h) => h.mediaId === mediaId && h.season === season && h.episode === episode
+      );
+    }
+    return history.find((h) => h.mediaId === mediaId);
+  },
+
   saveProgress: async (item) => {
     const current = get().watchHistory;
-    const filtered = current.filter((h) => h.mediaId !== item.mediaId);
+    // Match either exact episode or the movie
+    const filtered = current.filter((h) => {
+      if (h.mediaId !== item.mediaId) return true;
+      if (item.season !== undefined && item.episode !== undefined) {
+        return !(h.season === item.season && h.episode === item.episode);
+      }
+      return false;
+    });
+
+    const isDone = item.durationSeconds > 0 && item.positionSeconds / item.durationSeconds >= 0.9;
 
     const updatedItem: WatchHistoryItem = {
       ...item,
+      completed: isDone,
       timestamp: Date.now(),
     };
 

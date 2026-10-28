@@ -115,14 +115,40 @@ export class FourKHdHubProvider implements MediaProvider {
 
     const elements = root.querySelectorAll('.download-item, .episode-download-item, a[href*="hubcloud"]');
     for (const el of elements) {
-      const link = el.tagName === 'A' ? el : el.querySelector('a[href]');
-      const href = link?.getAttribute('href');
-      if (!href) continue;
-
       const fileTitle =
         el.querySelector('.file-title, .episode-file-title')?.text?.trim() ||
-        link?.text?.trim() ||
+        (el.tagName === 'A' ? el.text.trim() : '') ||
         '4KHDHub Release';
+
+      const fullContextText = `${el.text} ${fileTitle}`;
+
+      // AVOID ALL ZIP / RAR / 7Z ARCHIVES - Video players cannot stream zipped files
+      if (
+        /\b(?:zip|rar|7z|tar)\b/i.test(fileTitle) ||
+        /\b(?:zip|rar|7z|tar)\b/i.test(fullContextText) ||
+        /\.(?:zip|rar|7z|tar)(?:\?|$)/i.test(fileTitle)
+      ) {
+        continue;
+      }
+
+      // Collect all mirrors inside this item (HubCloud, HubDrive, etc.)
+      const links = el.tagName === 'A' ? [el] : Array.from(el.querySelectorAll('a[href]'));
+      const validMirrors = [];
+
+      for (const link of links) {
+        const href = link.getAttribute('href');
+        if (!href) continue;
+        if (/\.(?:zip|rar|7z|tar)(?:\?|$)/i.test(href)) continue;
+
+        const linkLabel = link.text.trim() || 'Direct Mirror';
+        validMirrors.push({
+          label: linkLabel,
+          resolverUrl: href,
+          directFile: false,
+        });
+      }
+
+      if (validMirrors.length === 0) continue;
 
       const sizeText = el.querySelector('.badge-size, .badge')?.text?.trim() || '';
 
@@ -143,7 +169,7 @@ export class FourKHdHubProvider implements MediaProvider {
         resolution = 480;
       }
 
-      const { season, episode } = parseSeasonEpisode(fileTitle);
+      const { season, episode } = parseSeasonEpisode(fullContextText);
 
       releases.push({
         provider: 'fourkhdhub',
@@ -153,13 +179,7 @@ export class FourKHdHubProvider implements MediaProvider {
         season,
         episode,
         size: sizeText || undefined,
-        mirrors: [
-          {
-            label: `4KHDHub (${quality})`,
-            resolverUrl: href,
-            directFile: false,
-          },
-        ],
+        mirrors: validMirrors,
       });
     }
 

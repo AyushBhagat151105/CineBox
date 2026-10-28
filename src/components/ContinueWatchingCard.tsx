@@ -1,9 +1,12 @@
-import React from 'react';
-import { View, Text, Image, TouchableOpacity, StyleSheet } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, Image, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { WatchHistoryItem } from '../types/models';
 import { Ionicons } from '@expo/vector-icons';
 import { ProviderBadge } from './ProviderBadge';
+import { aggregator } from '../providers/aggregator';
+import { usePlayerStore } from '../store/usePlayerStore';
+import { cleanDisplayTitle } from '../utils/title';
 
 interface ContinueWatchingCardProps {
   item: WatchHistoryItem;
@@ -12,13 +15,57 @@ interface ContinueWatchingCardProps {
 
 export const ContinueWatchingCard: React.FC<ContinueWatchingCardProps> = ({ item }) => {
   const router = useRouter();
+  const setPlayback = usePlayerStore((s) => s.setPlayback);
+  const setAvailableReleases = usePlayerStore((s) => s.setAvailableReleases);
+  const [isResuming, setIsResuming] = useState(false);
 
   const progressPercent =
     item.durationSeconds > 0
       ? Math.min(100, Math.round((item.positionSeconds / item.durationSeconds) * 100))
       : 0;
 
-  const handleResume = () => {
+  const handleResume = async () => {
+    if (isResuming) return;
+    setIsResuming(true);
+    try {
+      // 1. Fetch available releases for this item
+      const releases = await aggregator.getAllReleases([
+        { provider: item.provider, id: item.mediaId },
+      ]);
+
+      if (releases.length > 0) {
+        // Filter by episode if available
+        let candidates = releases;
+        if (item.episode !== undefined) {
+          const epMatches = releases.filter(
+            (r) => r.episode === item.episode && (item.season === undefined || r.season === item.season)
+          );
+          if (epMatches.length > 0) candidates = epMatches;
+        }
+
+        const source = await aggregator.resolveWithFallback(candidates);
+        setPlayback(source, candidates[0], item.positionSeconds);
+        setAvailableReleases(candidates);
+
+        router.push({
+          pathname: '/player',
+          params: {
+            title: cleanDisplayTitle(item.title),
+            streamUrl: source.url,
+            mediaId: item.mediaId,
+            provider: item.provider,
+            posterUrl: item.posterUrl || '',
+            resumeSeconds: item.positionSeconds.toString(),
+          },
+        });
+        return;
+      }
+    } catch {
+      // If direct resume fails, seamlessly fallback to details page
+    } finally {
+      setIsResuming(false);
+    }
+
     router.push({
       pathname: '/details',
       params: {
@@ -56,7 +103,11 @@ export const ContinueWatchingCard: React.FC<ContinueWatchingCardProps> = ({ item
         )}
 
         <View style={styles.playOverlay}>
-          <Ionicons name="play" size={20} color="#ffffff" />
+          {isResuming ? (
+            <ActivityIndicator size="small" color="#ffffff" />
+          ) : (
+            <Ionicons name="play" size={20} color="#ffffff" />
+          )}
         </View>
 
         {/* Progress Bar */}

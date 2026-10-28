@@ -13,6 +13,7 @@
     "expo-file-system": "^58.0.12",
     "expo-font": "~58.0.10",
     "expo-linking": "~58.0.14",
+    "expo-navigation-bar": "^58.0.4",
     "expo-router": "~58.0.27",
     "expo-screen-orientation": "~58.0.3",
     "expo-splash-screen": "~58.0.11",
@@ -42,7 +43,11 @@
     "start": "expo start",
     "android": "expo run:android --device",
     "ios": "expo run:ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "build:apk": "cd android && ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a && cd .. && cp android/app/build/outputs/apk/release/app-release.apk ./CineBox-v1.0.0-release.apk",
+    "build:apk:all": "cd android && ./gradlew assembleRelease && cd .. && cp android/app/build/outputs/apk/release/app-release.apk ./CineBox-v1.0.0-all-arch.apk",
+    "build:apk:debug": "cd android && ./gradlew assembleDebug -PreactNativeArchitectures=arm64-v8a && cd .. && cp android/app/build/outputs/apk/debug/app-debug.apk ./CineBox-debug.apk",
+    "install:apk": "adb install -r ./CineBox-v1.0.0-release.apk"
   },
   "private": true
 }

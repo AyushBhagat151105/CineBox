@@ -8,14 +8,16 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
+import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAppStore } from '../../src/store/useAppStore';
 import { getActiveHDHub4uDomain } from '../../src/providers/hdhub4u/domain';
 
 export default function SettingsScreen() {
+  const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { clearHistory, watchHistory, favorites } = useAppStore();
+  const { clearHistory, watchHistory, favorites, skipSeconds, setSkipSeconds } = useAppStore();
 
   const [hdhubDomain, setHdhubDomain] = useState<string>('Probing...');
   const [probing, setProbing] = useState<boolean>(true);
@@ -28,9 +30,9 @@ export default function SettingsScreen() {
     setProbing(true);
     try {
       const active = await getActiveHDHub4uDomain();
-      setHdhubDomain(active);
+      setHdhubDomain(active.replace(/^https?:\/\//, ''));
     } catch {
-      setHdhubDomain('https://hdhub4u.ms');
+      setHdhubDomain('hdhub4u.ms');
     } finally {
       setProbing(false);
     }
@@ -57,14 +59,112 @@ export default function SettingsScreen() {
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <View style={styles.header}>
-        <Text style={styles.title}>Settings & Architecture</Text>
+        <Text style={styles.title}>Settings</Text>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        {/* Provider Gateway Status Section */}
+      <ScrollView
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 40 }]}
+        showsVerticalScrollIndicator={false}>
+        {/* Player Gestures & Controls */}
         <View style={styles.section}>
-          <Text style={styles.sectionHeader}>FEDERATED PROVIDERS</Text>
+          <Text style={styles.sectionHeader}>PLAYER GESTURES & SEEKING</Text>
 
+          <View style={styles.card}>
+            {/* Double Tap Skip Setting with Full Width Segmented Control */}
+            <View style={styles.settingBlock}>
+              <View style={styles.settingHeaderRow}>
+                <View style={[styles.iconBox, { backgroundColor: 'rgba(229, 9, 20, 0.12)' }]}>
+                  <Ionicons name="play-forward" size={18} color="#e50914" />
+                </View>
+                <View style={styles.settingTextWrap}>
+                  <Text style={styles.settingTitle}>Double-Tap Skip Duration</Text>
+                  <Text style={styles.settingSubtitle}>
+                    Double-tap left half to rewind, right half to jump
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.segmentedControl}>
+                {[5, 10, 15, 30].map((sec) => {
+                  const isActive = (skipSeconds || 10) === sec;
+                  return (
+                    <TouchableOpacity
+                      key={sec}
+                      onPress={() => setSkipSeconds(sec)}
+                      activeOpacity={0.7}
+                      style={[styles.segmentBtn, isActive && styles.segmentBtnActive]}>
+                      <Text style={[styles.segmentText, isActive && styles.segmentTextActive]}>
+                        {sec}s
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+
+            <View style={styles.divider} />
+
+            {/* Vertical Swipe Gestures Info */}
+            <View style={styles.settingRow}>
+              <View style={[styles.iconBox, { backgroundColor: 'rgba(245, 158, 11, 0.12)' }]}>
+                <Ionicons name="hand-left-outline" size={18} color="#f59e0b" />
+              </View>
+              <View style={styles.settingTextWrap}>
+                <Text style={styles.settingTitle}>Vertical Cinema Swipes</Text>
+                <Text style={styles.settingSubtitle}>
+                  Left half: Brightness • Right half: Volume
+                </Text>
+              </View>
+              <View style={styles.pillBadge}>
+                <Text style={styles.pillBadgeText}>ENABLED</Text>
+              </View>
+            </View>
+
+            <View style={styles.divider} />
+
+            {/* Auto-Failover */}
+            <View style={styles.settingRow}>
+              <View style={[styles.iconBox, { backgroundColor: 'rgba(16, 185, 129, 0.12)' }]}>
+                <Ionicons name="refresh-circle-outline" size={18} color="#10b981" />
+              </View>
+              <View style={styles.settingTextWrap}>
+                <Text style={styles.settingTitle}>Silent Stream Auto-Failover</Text>
+                <Text style={styles.settingSubtitle}>
+                  Seamless background switch when a mirror stalls
+                </Text>
+              </View>
+              <View style={[styles.pillBadge, { backgroundColor: 'rgba(16, 185, 129, 0.12)' }]}>
+                <Text style={[styles.pillBadgeText, { color: '#10b981' }]}>ACTIVE</Text>
+              </View>
+            </View>
+          </View>
+        </View>
+
+        {/* Privacy & Legal Architecture */}
+        <View style={styles.section}>
+          <Text style={styles.sectionHeader}>PRIVACY & TRANSPARENCY</Text>
+          <View style={styles.card}>
+            <TouchableOpacity
+              onPress={() => router.push('/privacy')}
+              style={styles.clickableRow}
+              activeOpacity={0.7}>
+              <View style={[styles.iconBox, { backgroundColor: 'rgba(16, 185, 129, 0.12)' }]}>
+                <Ionicons name="shield-checkmark" size={18} color="#10b981" />
+              </View>
+              <View style={styles.settingTextWrap}>
+                <Text style={styles.settingTitle}>Privacy Policy & Non-Hosting Disclaimer</Text>
+                <Text style={styles.settingSubtitle}>
+                  Zero telemetry • No tracking • Client-side indexer only
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="#6b7280" />
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Federated Provider Status */}
+        <View style={styles.section}>
+          <Text style={styles.sectionHeader}>FEDERATED CATALOG GATEWAYS</Text>
           <View style={styles.card}>
             {/* HDHub4u */}
             <View style={styles.providerRow}>
@@ -72,14 +172,14 @@ export default function SettingsScreen() {
                 <View style={[styles.statusDot, { backgroundColor: '#10b981' }]} />
                 <View>
                   <Text style={styles.providerName}>HDHub4u Gateway</Text>
-                  <Text style={styles.providerSub}>Active: {hdhubDomain}</Text>
+                  <Text style={styles.providerSub}>Domain: {hdhubDomain}</Text>
                 </View>
               </View>
               {probing ? (
                 <ActivityIndicator size="small" color="#10b981" />
               ) : (
                 <TouchableOpacity onPress={checkDomains} style={styles.refreshBtn}>
-                  <Ionicons name="refresh" size={16} color="#10b981" />
+                  <Ionicons name="refresh" size={14} color="#10b981" />
                 </TouchableOpacity>
               )}
             </View>
@@ -92,10 +192,12 @@ export default function SettingsScreen() {
                 <View style={[styles.statusDot, { backgroundColor: '#f59e0b' }]} />
                 <View>
                   <Text style={styles.providerName}>4KHDHub UHD</Text>
-                  <Text style={styles.providerSub}>Domain: https://4khdhub.one</Text>
+                  <Text style={styles.providerSub}>Remux / Web-DL 2160p</Text>
                 </View>
               </View>
-              <Text style={styles.onlineBadge}>ONLINE</Text>
+              <View style={[styles.pillBadge, { backgroundColor: 'rgba(16, 185, 129, 0.12)' }]}>
+                <Text style={[styles.pillBadgeText, { color: '#10b981' }]}>ONLINE</Text>
+              </View>
             </View>
 
             <View style={styles.divider} />
@@ -106,92 +208,65 @@ export default function SettingsScreen() {
                 <View style={[styles.statusDot, { backgroundColor: '#ef4444' }]} />
                 <View>
                   <Text style={styles.providerName}>MovieBox Multi-Host</Text>
-                  <Text style={styles.providerSub}>7 Hosts Pool • HMAC-MD5 Signed</Text>
+                  <Text style={styles.providerSub}>7 Hosts Pool • HMAC-MD5</Text>
                 </View>
               </View>
-              <Text style={styles.onlineBadge}>ONLINE</Text>
+              <View style={[styles.pillBadge, { backgroundColor: 'rgba(16, 185, 129, 0.12)' }]}>
+                <Text style={[styles.pillBadgeText, { color: '#10b981' }]}>ONLINE</Text>
+              </View>
             </View>
           </View>
         </View>
 
-        {/* Playback Capabilities */}
+        {/* Data & Cache */}
         <View style={styles.section}>
-          <Text style={styles.sectionHeader}>NATIVE MEDIA ENGINE</Text>
+          <Text style={styles.sectionHeader}>STORAGE & LOCAL DATA</Text>
           <View style={styles.card}>
-            <View style={styles.infoRow}>
-              <View style={styles.infoLeft}>
-                <Ionicons name="hardware-chip-outline" size={20} color="#e50914" />
-                <Text style={styles.infoTitle}>Video Player Engine</Text>
+            <View style={styles.settingRow}>
+              <View style={[styles.iconBox, { backgroundColor: 'rgba(156, 163, 175, 0.12)' }]}>
+                <Ionicons name="time-outline" size={18} color="#9ca3af" />
               </View>
-              <Text style={styles.infoValue}>expo-video (AVPlayer / ExoPlayer)</Text>
+              <View style={styles.settingTextWrap}>
+                <Text style={styles.settingTitle}>Watch History</Text>
+                <Text style={styles.settingSubtitle}>Saved resume timestamps</Text>
+              </View>
+              <Text style={styles.countBadge}>{watchHistory.length} items</Text>
             </View>
 
             <View style={styles.divider} />
 
-            <View style={styles.infoRow}>
-              <View style={styles.infoLeft}>
-                <Ionicons name="volume-high-outline" size={20} color="#10b981" />
-                <Text style={styles.infoTitle}>Dual Audio Track Switch</Text>
+            <View style={styles.settingRow}>
+              <View style={[styles.iconBox, { backgroundColor: 'rgba(156, 163, 175, 0.12)' }]}>
+                <Ionicons name="bookmark-outline" size={18} color="#9ca3af" />
               </View>
-              <Text style={styles.infoValue}>Native Container + Dubbed API</Text>
-            </View>
-
-            <View style={styles.divider} />
-
-            <View style={styles.infoRow}>
-              <View style={styles.infoLeft}>
-                <Ionicons name="shield-checkmark-outline" size={20} color="#3b82f6" />
-                <Text style={styles.infoTitle}>Stream Preflight Health Check</Text>
+              <View style={styles.settingTextWrap}>
+                <Text style={styles.settingTitle}>Watchlist</Text>
+                <Text style={styles.settingSubtitle}>Saved movies and series</Text>
               </View>
-              <Text style={styles.infoValue}>Active with Auto-Fallback</Text>
-            </View>
-          </View>
-        </View>
-
-        {/* Data & Storage */}
-        <View style={styles.section}>
-          <Text style={styles.sectionHeader}>STORAGE & DATA</Text>
-          <View style={styles.card}>
-            <View style={styles.infoRow}>
-              <View style={styles.infoLeft}>
-                <Ionicons name="time-outline" size={20} color="#a0a0b0" />
-                <Text style={styles.infoTitle}>Watch History Items</Text>
-              </View>
-              <Text style={styles.infoValue}>{watchHistory.length}</Text>
-            </View>
-
-            <View style={styles.divider} />
-
-            <View style={styles.infoRow}>
-              <View style={styles.infoLeft}>
-                <Ionicons name="bookmark-outline" size={20} color="#a0a0b0" />
-                <Text style={styles.infoTitle}>Saved in Watchlist</Text>
-              </View>
-              <Text style={styles.infoValue}>{favorites.length}</Text>
+              <Text style={styles.countBadge}>{favorites.length} items</Text>
             </View>
 
             <View style={styles.divider} />
 
             <TouchableOpacity
               onPress={handleClearHistory}
-              style={[styles.infoRow, { justifyContent: 'center' }]}>
-              <Ionicons name="trash-outline" size={18} color="#ef4444" />
-              <Text style={[styles.infoTitle, { color: '#ef4444', marginLeft: 8 }]}>
-                Clear Watch History
-              </Text>
+              style={styles.clickableRow}
+              activeOpacity={0.7}>
+              <View style={[styles.iconBox, { backgroundColor: 'rgba(239, 68, 68, 0.12)' }]}>
+                <Ionicons name="trash-outline" size={18} color="#ef4444" />
+              </View>
+              <View style={styles.settingTextWrap}>
+                <Text style={[styles.settingTitle, { color: '#ef4444' }]}>Clear Watch History</Text>
+                <Text style={styles.settingSubtitle}>Reset local playback positions</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color="#ef4444" />
             </TouchableOpacity>
           </View>
         </View>
 
-        {/* App Info */}
-        <View style={styles.aboutContainer}>
+        <View style={styles.aboutWrap}>
           <Text style={styles.aboutTitle}>CineBox v1.0.0</Text>
-          <Text style={styles.aboutSub}>
-            Native Expo mobile streaming client reverse-engineered from MovieBox-Tui.
-          </Text>
-          <Text style={styles.aboutSub}>
-            Integrated with HDHub4u, 4KHDHub, and MovieBox API.
-          </Text>
+          <Text style={styles.aboutSub}>Engineered for pure cinematic playback.</Text>
         </View>
       </ScrollView>
     </View>
@@ -204,8 +279,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#0a0a0f',
   },
   header: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: 20,
+    paddingVertical: 14,
     borderBottomWidth: 1,
     borderBottomColor: '#161622',
   },
@@ -213,29 +288,97 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 22,
     fontWeight: '800',
-    letterSpacing: 0.5,
+    letterSpacing: 0.3,
   },
   scrollContent: {
     padding: 16,
-    paddingBottom: 40,
+    gap: 20,
   },
   section: {
-    marginBottom: 24,
+    gap: 8,
   },
   sectionHeader: {
-    color: '#6c6c80',
-    fontSize: 12,
+    color: '#6b7280',
+    fontSize: 11,
     fontWeight: '800',
-    letterSpacing: 1,
-    marginBottom: 8,
+    letterSpacing: 0.8,
     marginLeft: 4,
   },
   card: {
-    backgroundColor: '#14141c',
-    borderRadius: 12,
+    backgroundColor: '#12121a',
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#20202c',
+    borderColor: '#1e1e2c',
     overflow: 'hidden',
+  },
+  settingBlock: {
+    padding: 16,
+    gap: 12,
+  },
+  settingHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  iconBox: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  settingTextWrap: {
+    flex: 1,
+  },
+  settingTitle: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  settingSubtitle: {
+    color: '#9ca3af',
+    fontSize: 12,
+    marginTop: 2,
+    lineHeight: 16,
+  },
+  segmentedControl: {
+    flexDirection: 'row',
+    backgroundColor: '#0a0a0f',
+    borderRadius: 10,
+    padding: 3,
+    borderWidth: 1,
+    borderColor: '#1e1e2c',
+  },
+  segmentBtn: {
+    flex: 1,
+    paddingVertical: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 8,
+  },
+  segmentBtnActive: {
+    backgroundColor: '#e50914',
+  },
+  segmentText: {
+    color: '#9ca3af',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  segmentTextActive: {
+    color: '#ffffff',
+    fontWeight: '800',
+  },
+  settingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
+    gap: 12,
+  },
+  clickableRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
+    gap: 12,
   },
   providerRow: {
     flexDirection: 'row',
@@ -249,9 +392,9 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   statusDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
   },
   providerName: {
     color: '#ffffff',
@@ -259,62 +402,52 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   providerSub: {
-    color: '#777788',
-    fontSize: 11,
+    color: '#6b7280',
+    fontSize: 12,
     marginTop: 2,
   },
   refreshBtn: {
-    padding: 6,
-    borderRadius: 6,
+    padding: 8,
+    borderRadius: 8,
     backgroundColor: 'rgba(16, 185, 129, 0.1)',
   },
-  onlineBadge: {
-    color: '#10b981',
+  pillBadge: {
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  pillBadgeText: {
+    color: '#9ca3af',
     fontSize: 10,
     fontWeight: '800',
-    backgroundColor: 'rgba(16, 185, 129, 0.1)',
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderRadius: 4,
+    letterSpacing: 0.5,
+  },
+  countBadge: {
+    color: '#9ca3af',
+    fontSize: 12,
+    fontWeight: '600',
+    backgroundColor: '#1a1a24',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
   },
   divider: {
     height: 1,
-    backgroundColor: '#1e1e2c',
+    backgroundColor: '#1a1a24',
   },
-  infoRow: {
-    flexDirection: 'row',
+  aboutWrap: {
     alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 14,
-  },
-  infoLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  infoTitle: {
-    color: '#ffffff',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  infoValue: {
-    color: '#8e8e9e',
-    fontSize: 12,
-  },
-  aboutContainer: {
-    alignItems: 'center',
-    paddingVertical: 20,
+    paddingVertical: 12,
     gap: 4,
   },
   aboutTitle: {
-    color: '#555566',
+    color: '#4b5563',
     fontSize: 13,
     fontWeight: '700',
   },
   aboutSub: {
-    color: '#444455',
+    color: '#374151',
     fontSize: 11,
-    textAlign: 'center',
-    maxWidth: 300,
   },
 });

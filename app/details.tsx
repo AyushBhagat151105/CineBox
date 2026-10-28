@@ -53,6 +53,7 @@ export default function DetailsScreen() {
   // Selective Zustand hooks to avoid unnecessary re-renders
   const isFavorite = useAppStore((s) => s.isFavorite);
   const toggleFavorite = useAppStore((s) => s.toggleFavorite);
+  const getProgress = useAppStore((s) => s.getProgress);
   const setPlayback = usePlayerStore((s) => s.setPlayback);
   const setAvailableReleases = usePlayerStore((s) => s.setAvailableReleases);
 
@@ -171,9 +172,9 @@ export default function DetailsScreen() {
         }
       }
 
-      // 2. Episode filter
+      // 2. Episode filter - STRICT: if episode is selected, MUST match and exclude packs
       if (selectedEpisode !== 'all' && selectedSeason !== 'packs') {
-        if (r.episode !== undefined && r.episode !== selectedEpisode) return false;
+        if (r.episode !== selectedEpisode) return false;
       }
 
       // 3. Quality filter
@@ -188,6 +189,27 @@ export default function DetailsScreen() {
       return true;
     });
   }, [releases, isSeries, availableSeasons, selectedSeason, selectedEpisode, selectedQuality]);
+
+  // Active watch progress for dynamic Resume / Watched status
+  const currentActiveProgress = useMemo(() => {
+    const s = typeof selectedSeason === 'number' ? selectedSeason : undefined;
+    const ep = typeof selectedEpisode === 'number' ? selectedEpisode : undefined;
+    return getProgress(mediaId, s, ep) || getProgress(mediaId);
+  }, [getProgress, mediaId, selectedSeason, selectedEpisode]);
+
+  const hasWatchProgress =
+    currentActiveProgress &&
+    currentActiveProgress.positionSeconds > 10 &&
+    !currentActiveProgress.completed;
+  const isWatched = Boolean(currentActiveProgress?.completed);
+
+  // Format seconds to "1h 45m" or "14m"
+  const formatProgressTime = (sec: number) => {
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    if (h > 0) return `${h}h ${m}m`;
+    return `${m}m`;
+  };
 
   // Quality counts for badges
   const qualityCounts = useMemo(() => {
@@ -210,10 +232,24 @@ export default function DetailsScreen() {
   const handlePlayRelease = async (release: Release) => {
     setResolvingRelease(release.filename);
     try {
-      const source = await aggregator.resolveWithFallback([release]);
-      const resumeSec = paramResumeSeconds ? parseInt(paramResumeSeconds, 10) : 0;
+      // Find candidate mirrors for seamless auto-failover
+      const candidates = [
+        release,
+        ...releases.filter(
+          (r) =>
+            r !== release &&
+            r.season === release.season &&
+            r.episode === release.episode
+        ),
+      ];
+
+      const source = await aggregator.resolveWithFallback(candidates);
+      const resumeSec = paramResumeSeconds
+        ? parseInt(paramResumeSeconds, 10)
+        : currentActiveProgress?.positionSeconds || 0;
 
       setPlayback(source, release, resumeSec);
+      setAvailableReleases(candidates.length > 0 ? candidates : releases);
 
       router.push({
         pathname: '/player',
@@ -240,9 +276,12 @@ export default function DetailsScreen() {
     try {
       const source = await aggregator.resolveWithFallback(pool);
       const chosenRelease = pool[0];
-      const resumeSec = paramResumeSeconds ? parseInt(paramResumeSeconds, 10) : 0;
+      const resumeSec = paramResumeSeconds
+        ? parseInt(paramResumeSeconds, 10)
+        : currentActiveProgress?.positionSeconds || 0;
 
       setPlayback(source, chosenRelease, resumeSec);
+      setAvailableReleases(pool);
 
       router.push({
         pathname: '/player',
@@ -343,25 +382,56 @@ export default function DetailsScreen() {
             </View>
           </View>
 
-          {/* Quick Play Action Button */}
+          {/* Dynamic Quick Play / Resume Action Button */}
           <TouchableOpacity
-            style={[styles.quickPlayBtn, releases.length === 0 && styles.disabledBtn]}
+            style={[
+              styles.quickPlayBtn,
+              isWatched && styles.watchedPlayBtn,
+              releases.length === 0 && styles.disabledBtn,
+            ]}
             onPress={handleQuickPlay}
             disabled={releases.length === 0 || resolvingRelease !== null}
             activeOpacity={0.8}>
             {resolvingRelease === 'quick_play' ? (
               <ActivityIndicator color="#ffffff" size="small" />
             ) : (
-              <>
-                <Ionicons name="play" size={20} color="#ffffff" />
+              <View style={styles.quickPlayContent}>
+                <Ionicons
+                  name={isWatched ? 'checkmark-circle' : hasWatchProgress ? 'play-forward' : 'play'}
+                  size={20}
+                  color="#ffffff"
+                />
                 <Text style={styles.quickPlayText}>
-                  {filteredReleases.length > 0
+                  {isWatched
+                    ? 'Watched · Watch Again'
+                    : hasWatchProgress
+                    ? `Resume (at ${formatProgressTime(currentActiveProgress!.positionSeconds)})`
+                    : filteredReleases.length > 0
                     ? `Play ${filteredReleases[0].quality}`
                     : releases.length > 0
                     ? `Play in ${releases[0].quality}`
                     : 'Finding Streams...'}
                 </Text>
-              </>
+              </View>
+            )}
+            {/* Progress bar line if resuming */}
+            {hasWatchProgress && currentActiveProgress && currentActiveProgress.durationSeconds > 0 && (
+              <View style={styles.buttonProgressBarBg}>
+                <View
+                  style={[
+                    styles.buttonProgressBarFill,
+                    {
+                      width: `${Math.min(
+                        100,
+                        Math.max(
+                          5,
+                          (currentActiveProgress.positionSeconds / currentActiveProgress.durationSeconds) * 100
+                        )
+                      )}%`,
+                    },
+                  ]}
+                />
+              </View>
             )}
           </TouchableOpacity>
 
@@ -523,16 +593,40 @@ export default function DetailsScreen() {
                     </Text>
                   </TouchableOpacity>
 
-                  {availableEpisodes.map((ep) => (
-                    <TouchableOpacity
-                      key={`ep_${ep}`}
-                      style={[styles.episodeChip, selectedEpisode === ep && styles.episodeChipActive]}
-                      onPress={() => setSelectedEpisode(ep)}>
-                      <Text style={[styles.episodeChipText, selectedEpisode === ep && styles.episodeChipTextActive]}>
-                        EP {ep < 10 ? `0${ep}` : ep}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
+                  {availableEpisodes.map((ep) => {
+                    const s = typeof selectedSeason === 'number' ? selectedSeason : undefined;
+                    const epProg = getProgress(mediaId, s, ep);
+                    const epDone = epProg?.completed;
+                    const isSelected = selectedEpisode === ep;
+
+                    return (
+                      <TouchableOpacity
+                        key={`ep_${ep}`}
+                        style={[
+                          styles.episodeChip,
+                          isSelected && styles.episodeChipActive,
+                          epDone && styles.episodeChipWatched,
+                        ]}
+                        onPress={() => setSelectedEpisode(ep)}>
+                        {epDone ? (
+                          <Ionicons
+                            name="checkmark-circle"
+                            size={12}
+                            color="#10b981"
+                            style={{ marginRight: 3 }}
+                          />
+                        ) : null}
+                        <Text
+                          style={[
+                            styles.episodeChipText,
+                            isSelected && styles.episodeChipTextActive,
+                            epDone && styles.episodeChipTextWatched,
+                          ]}>
+                          EP {ep < 10 ? `0${ep}` : ep}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
                 </ScrollView>
               </View>
             )}
@@ -654,7 +748,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#161622',
   },
   backdropOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(10, 10, 15, 0.65)',
   },
   contentBody: {
@@ -720,14 +814,35 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   quickPlayBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
     backgroundColor: '#e50914',
     paddingVertical: 14,
     borderRadius: 8,
-    gap: 8,
     marginBottom: 20,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  quickPlayContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  watchedPlayBtn: {
+    backgroundColor: '#1b3b2b',
+    borderColor: '#10b981',
+    borderWidth: 1,
+  },
+  buttonProgressBarBg: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 4,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+  },
+  buttonProgressBarFill: {
+    height: '100%',
+    backgroundColor: '#ffffff',
   },
   disabledBtn: {
     backgroundColor: '#2e2e38',
@@ -856,6 +971,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
   },
   episodeChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: '#14141c',
     paddingHorizontal: 12,
     paddingVertical: 6,
@@ -868,6 +985,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#e50914',
     borderColor: '#e50914',
   },
+  episodeChipWatched: {
+    borderColor: '#10b981',
+    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+  },
   episodeChipText: {
     color: '#7e7e90',
     fontSize: 11,
@@ -876,6 +997,9 @@ const styles = StyleSheet.create({
   episodeChipTextActive: {
     color: '#ffffff',
     fontWeight: '700',
+  },
+  episodeChipTextWatched: {
+    color: '#10b981',
   },
   episodeTag: {
     backgroundColor: '#3b82f6',
