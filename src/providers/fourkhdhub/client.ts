@@ -8,6 +8,7 @@ import {
   Release,
 } from '../../types/models';
 import { resolveShortenerUrl } from '../hdhub4u/resolver';
+import { parseSeasonEpisode } from '../../utils/seasonEpisode';
 
 const DEFAULT_BASE_URL = 'https://4khdhub.one';
 const BROWSER_UA =
@@ -125,25 +126,32 @@ export class FourKHdHubProvider implements MediaProvider {
 
       const sizeText = el.querySelector('.badge-size, .badge')?.text?.trim() || '';
 
-      let quality = '1080p';
+      let quality = '1080p FHD';
       let resolution = 1080;
 
-      if (/4k|2160p|uhd/i.test(fileTitle)) {
+      if (/\b(?:4k|2160p|uhd)\b/i.test(fileTitle)) {
         quality = '4K UHD';
         resolution = 2160;
-      } else if (/1080p/i.test(fileTitle)) {
+      } else if (/\b1080p\b/i.test(fileTitle)) {
         quality = '1080p FHD';
         resolution = 1080;
-      } else if (/720p/i.test(fileTitle)) {
+      } else if (/\b720p\b/i.test(fileTitle)) {
         quality = '720p HD';
         resolution = 720;
+      } else if (/\b480p\b/i.test(fileTitle)) {
+        quality = '480p';
+        resolution = 480;
       }
+
+      const { season, episode } = parseSeasonEpisode(fileTitle);
 
       releases.push({
         provider: 'fourkhdhub',
         filename: fileTitle,
         quality,
         resolution,
+        season,
+        episode,
         size: sizeText || undefined,
         mirrors: [
           {

@@ -19,6 +19,7 @@ import { MovieCard } from '../../src/components/MovieCard';
 import { ContinueWatchingCard } from '../../src/components/ContinueWatchingCard';
 import { ProviderBadge } from '../../src/components/ProviderBadge';
 import { useAppStore } from '../../src/store/useAppStore';
+import { cleanMovieTitle, cleanDisplayTitle } from '../../src/utils/title';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -41,14 +42,24 @@ export default function HomeScreen() {
       const mb = aggregator.getProvider('moviebox');
 
       const [bollyRes, fourkRes, mbRes] = await Promise.allSettled([
-        hdhub ? hdhub.search('2024') : Promise.resolve([]),
-        fourk ? fourk.search('4k') : Promise.resolve([]),
-        mb ? mb.search('action') : Promise.resolve([]),
+        hdhub ? hdhub.search('2026') : Promise.resolve([]),
+        fourk ? fourk.search('2026') : Promise.resolve([]),
+        mb ? mb.search('2026') : Promise.resolve([]),
       ]);
 
-      const bolly = bollyRes.status === 'fulfilled' ? bollyRes.value : [];
-      const f4k = fourkRes.status === 'fulfilled' ? fourkRes.value : [];
-      const mbData = mbRes.status === 'fulfilled' ? mbRes.value : [];
+      let bolly = bollyRes.status === 'fulfilled' ? bollyRes.value : [];
+      let f4k = fourkRes.status === 'fulfilled' ? fourkRes.value : [];
+      let mbData = mbRes.status === 'fulfilled' ? mbRes.value : [];
+
+      // Fallback to 2025 if 2026 has limited results
+      if (bolly.length < 5 && hdhub) {
+        const fallbackBolly = await hdhub.search('2025');
+        bolly = [...bolly, ...fallbackBolly];
+      }
+      if (f4k.length < 5 && fourk) {
+        const fallback4k = await fourk.search('4k');
+        f4k = [...f4k, ...fallback4k];
+      }
 
       setBollywoodItems(bolly);
       setFourkItems(f4k);
@@ -141,7 +152,7 @@ export default function HomeScreen() {
                 params: {
                   provider: featuredItem.id.provider,
                   id: featuredItem.id.value,
-                  title: featuredItem.title,
+                  title: cleanMovieTitle(featuredItem.title),
                   posterUrl: featuredItem.posterUrl || '',
                   mediaType: featuredItem.mediaType,
                 },
@@ -164,7 +175,7 @@ export default function HomeScreen() {
               </View>
 
               <Text numberOfLines={2} style={styles.heroTitle}>
-                {featuredItem.title}
+                {cleanMovieTitle(featuredItem.title)}
               </Text>
 
               <View style={styles.heroActionRow}>

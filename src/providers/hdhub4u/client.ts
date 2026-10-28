@@ -10,6 +10,8 @@ import {
 } from '../../types/models';
 import { getActiveHDHub4uDomain } from './domain';
 import { resolveShortenerUrl } from './resolver';
+import { parseSeasonEpisode, formatEpisodeTitle } from '../../utils/seasonEpisode';
+import { cleanMovieTitle, cleanDisplayTitle } from '../../utils/title';
 
 const BROWSER_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
@@ -27,6 +29,53 @@ export class HDHub4uProvider implements MediaProvider {
 
   async search(query: string): Promise<CatalogItem[]> {
     const domain = await getActiveHDHub4uDomain();
+
+    // 1. First try HDHub4u's official Pingora fast search API
+    try {
+      const pingoraUrl = `https://search.pingora.fyi/collections/post/documents/search?q=${encodeURIComponent(
+        query
+      )}&query_by=post_title,category,stars,director,imdb_id&query_by_weights=4,2,2,2,4&sort_by=sort_by_date:desc&limit=24`;
+
+      const pRes = await this.client.get(pingoraUrl, {
+        headers: { Referer: 'https://hdhub4u.fast/' },
+        timeout: 5000,
+      });
+
+      const hits = pRes.data?.hits || [];
+      if (hits.length > 0) {
+        return hits.map((h: any) => {
+          const doc = h.document;
+          const rawTitle = doc.post_title || '';
+          let postUrl = doc.permalink || '';
+          try {
+            const parsed = new URL(postUrl);
+            postUrl = `${domain}${parsed.pathname}`;
+          } catch {
+            if (postUrl.startsWith('/')) postUrl = `${domain}${postUrl}`;
+          }
+
+          const yearMatch = rawTitle.match(/\b(19\d\d|20\d\d)\b/);
+          const year = yearMatch ? yearMatch[1] : undefined;
+          const isSeries = /season|s\d+|series|episodes/i.test(rawTitle);
+
+          return {
+            id: {
+              provider: 'hdhub4u',
+              value: postUrl,
+            },
+            title: cleanMovieTitle(rawTitle),
+            mediaType: isSeries ? 'series' : 'movie',
+            year,
+            posterUrl: doc.post_thumbnail,
+            rating: doc.imdb_rating ? String(doc.imdb_rating) : undefined,
+            availableProviders: ['hdhub4u'],
+          };
+        });
+      }
+    } catch {
+      // Fallback to domain search
+    }
+
     const searchUrl = `${domain}/?s=${encodeURIComponent(query)}`;
 
     try {
@@ -99,11 +148,23 @@ export class HDHub4uProvider implements MediaProvider {
     }
   }
 
+  private async normalizePostUrl(postUrl: string): Promise<string> {
+    const domain = await getActiveHDHub4uDomain();
+    try {
+      const parsed = new URL(postUrl);
+      return `${domain}${parsed.pathname}`;
+    } catch {
+      return postUrl.startsWith('/') ? `${domain}${postUrl}` : postUrl;
+    }
+  }
+
   async details(postUrl: string): Promise<MediaDetails> {
-    const res = await this.client.get(postUrl);
+    const targetUrl = await this.normalizePostUrl(postUrl);
+    const res = await this.client.get(targetUrl);
     const root = parse(res.data);
 
     const rawTitle =
+      root.querySelector('h1.page-title')?.text?.trim() ||
       root.querySelector('h1.entry-title')?.text?.trim() ||
       root.querySelector('h1')?.text?.trim() ||
       root.querySelector('title')?.text?.trim() ||
@@ -147,66 +208,99 @@ export class HDHub4uProvider implements MediaProvider {
   }
 
   async releases(postUrl: string): Promise<Release[]> {
-    const res = await this.client.get(postUrl);
+    const targetUrl = await this.normalizePostUrl(postUrl);
+    const res = await this.client.get(targetUrl);
     const root = parse(res.data);
     const releases: Release[] = [];
 
-    const links = root.querySelectorAll('a[href]');
+    const rawTitle =
+      root.querySelector('h1.page-title')?.text?.trim() ||
+      root.querySelector('h1.entry-title')?.text?.trim() ||
+      root.querySelector('h1')?.text?.trim() ||
+      'HDHub4u Stream';
+    const fallbackTitle = cleanDisplayTitle(rawTitle);
+
+    const entry = root.querySelector('.entry-content') || root;
+    const links = entry.querySelectorAll('a[href]');
+
     for (const el of links) {
       const href = el.getAttribute('href');
       if (!href) continue;
 
-      const text = el.text.trim() || el.getAttribute('title') || '';
+      // Must be a recognized download / shortener mirror
+      const isDlHost =
+        href.includes('hubcloud.') ||
+        href.includes('hubdrive.') ||
+        href.includes('greenmotors.') ||
+        href.includes('greenmountmotors.') ||
+        href.includes('technical-now.') ||
+        href.includes('pixeldrain.') ||
+        href.includes('hblinks.') ||
+        (href.includes('/archives/') && !href.includes('hdhub4u'));
+
+      if (!isDlHost) continue;
+
+      const linkText = el.text.trim();
       const parent = el.parentNode;
       const parentText = parent ? parent.text.trim() : '';
-      const combined = `${parentText} ${text}`;
+      const combined = `${parentText} ${linkText}`;
 
-      const isShortener =
-        href.includes('hubcloud') ||
-        href.includes('hubdrive') ||
-        href.includes('greenmotors') ||
-        href.includes('technical-now') ||
-        href.includes('pixeldrain') ||
-        href.includes('gamerxyt');
-
-      const resMatch = combined.match(/\b(4K|2160p|1080p|720p|480p|HEVC)\b/i);
-
-      if (resMatch || isShortener) {
-        let quality = '1080p';
-        let resolution = 1080;
-
-        if (/4k|2160p/i.test(combined)) {
-          quality = '4K UHD';
-          resolution = 2160;
-        } else if (/1080p/i.test(combined)) {
-          quality = '1080p FHD';
-          resolution = 1080;
-        } else if (/720p/i.test(combined)) {
-          quality = '720p HD';
-          resolution = 720;
-        } else if (/480p/i.test(combined)) {
-          quality = '480p';
-          resolution = 480;
-        }
-
-        const sizeMatch = combined.match(/(\d+(?:\.\d+)?\s*(?:GB|MB|GiB|MiB))/i);
-        const sizeStr = sizeMatch ? sizeMatch[1] : undefined;
-
-        releases.push({
-          provider: 'hdhub4u',
-          filename: cleanMovieTitle(el.text.trim() || 'HDHub4u Stream'),
-          quality,
-          resolution,
-          size: sizeStr,
-          mirrors: [
-            {
-              label: `HDHub4u (${quality})`,
-              resolverUrl: href,
-              directFile: false,
-            },
-          ],
-        });
+      // Ignore genre, cast or ad-wrapped text
+      if (/genre:|stars:|creator:|director:|trailer/i.test(combined)) {
+        continue;
       }
+
+      let quality = '1080p FHD';
+      let resolution = 1080;
+
+      if (/\b(?:4k|2160p|uhd)\b/i.test(combined)) {
+        quality = '4K UHD';
+        resolution = 2160;
+      } else if (/\b1080p\b/i.test(combined)) {
+        quality = '1080p FHD';
+        resolution = 1080;
+      } else if (/\b720p\b/i.test(combined)) {
+        quality = '720p HD';
+        resolution = 720;
+      } else if (/\b480p\b/i.test(combined)) {
+        quality = '480p';
+        resolution = 480;
+      }
+
+      const sizeMatch = combined.match(/(\d+(?:\.\d+)?\s*(?:GB|MB|GiB|MiB))/i);
+      const sizeStr = sizeMatch ? sizeMatch[1] : undefined;
+
+      const { season, episode, isPack } = parseSeasonEpisode(combined, fallbackTitle);
+
+      let filename: string;
+      if (episode !== undefined) {
+        filename = formatEpisodeTitle(combined, quality, season, episode);
+      } else if (isPack && sizeStr) {
+        filename = `${fallbackTitle} · Season Pack (${quality} [${sizeStr}])`;
+      } else if (linkText.length > 3 && !/^(drive|watch|instant|download)$/i.test(linkText)) {
+        filename = cleanDisplayTitle(linkText);
+      } else if (parentText.length > 3 && !/^(drive|watch|instant|download)$/i.test(parentText)) {
+        filename = cleanDisplayTitle(parentText);
+      } else {
+        filename = `${fallbackTitle} (${quality})`;
+      }
+
+      releases.push({
+        provider: 'hdhub4u',
+        filename,
+        quality,
+        resolution,
+        season,
+        episode,
+        size: sizeStr,
+        mirrors: [
+          {
+            label: `HDHub4u (${quality})`,
+            resolverUrl: href,
+            directFile: false,
+          },
+        ],
+      });
     }
 
     const seen = new Set<string>();
@@ -238,12 +332,4 @@ export class HDHub4uProvider implements MediaProvider {
       },
     };
   }
-}
-
-function cleanMovieTitle(title: string): string {
-  return title
-    .replace(/\b(Download|Full Movie|Watch Online|Hindi Dubbed|Dual Audio|HDRip|BluRay|ESub|x264|HEVC)\b/gi, '')
-    .replace(/[\[\]\(\)\{\}]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
 }

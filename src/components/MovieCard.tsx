@@ -11,6 +11,7 @@ import { useRouter } from 'expo-router';
 import { CatalogItem } from '../types/models';
 import { ProviderBadge } from './ProviderBadge';
 import { Ionicons } from '@expo/vector-icons';
+import { cleanMovieTitle, cleanDisplayTitle } from '../utils/title';
 
 interface MovieCardProps {
   item: CatalogItem;
@@ -31,13 +32,15 @@ export const MovieCard: React.FC<MovieCardProps> = ({
 }) => {
   const router = useRouter();
 
+  const cleanedTitle = cleanDisplayTitle(item.title);
+
   const handlePress = () => {
     router.push({
       pathname: '/details',
       params: {
         provider: item.id.provider,
         id: item.id.value,
-        title: item.title,
+        title: cleanedTitle,
         year: item.year || '',
         posterUrl: item.posterUrl || '',
         mediaType: item.mediaType,
@@ -78,7 +81,7 @@ export const MovieCard: React.FC<MovieCardProps> = ({
       </View>
 
       <Text numberOfLines={1} style={styles.title}>
-        {item.title}
+        {cleanedTitle}
       </Text>
 
       <View style={styles.metaRow}>

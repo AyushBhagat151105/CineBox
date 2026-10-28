@@ -75,14 +75,18 @@ export class AggregatorService {
     return allReleases.sort((a, b) => b.resolution - a.resolution);
   }
 
-  // 3. Pre-flight Probe: Verify stream URL responds with 200 or 206
+  // 3. Pre-flight Probe: Verify stream URL responds with 200 or 206 and is NOT an HTML webpage
   async probeStream(url: string, headers?: Record<string, string>): Promise<boolean> {
     try {
       const res = await axios.head(url, {
         headers: headers || { 'User-Agent': 'Mozilla/5.0' },
-        timeout: 4000,
+        timeout: 5000,
         validateStatus: (status) => status >= 200 && status < 400,
       });
+      const cType = (res.headers['content-type'] || '').toLowerCase();
+      if (cType.includes('text/html')) {
+        return false;
+      }
       return res.status >= 200 && res.status < 400;
     } catch {
       // If HEAD fails, try ranged GET (bytes=0-0)
@@ -92,9 +96,13 @@ export class AggregatorService {
             ...(headers || {}),
             Range: 'bytes=0-0',
           },
-          timeout: 4000,
+          timeout: 5000,
           validateStatus: (status) => status >= 200 && status < 400,
         });
+        const cType = (getRes.headers['content-type'] || '').toLowerCase();
+        if (cType.includes('text/html')) {
+          return false;
+        }
         return getRes.status >= 200 && getRes.status < 400;
       } catch {
         return false;
@@ -116,6 +124,19 @@ export class AggregatorService {
           // Pre-flight probe check
           const isHealthy = await this.probeStream(source.url, source.headers);
           if (isHealthy) {
+            return source;
+          }
+
+          // If preflight failed, check if this is an already-verified direct media stream URL.
+          // Mobile Axios can throw network/timeout errors on large presigned URLs even when
+          // the native ExoPlayer engine can stream them perfectly.
+          const isKnownDirectStream =
+            source.url.includes('cloudflarestorage.com') ||
+            source.url.includes('pixeldrain.com') ||
+            source.url.includes('hbplay') ||
+            /\.(mkv|mp4|m3u8|webm)/i.test(source.url);
+
+          if (isKnownDirectStream) {
             return source;
           } else {
             errors.push(`${release.filename} failed preflight check`);

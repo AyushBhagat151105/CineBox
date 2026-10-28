@@ -4,22 +4,23 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  Dimensions,
   Modal,
   ScrollView,
   StatusBar,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useVideoPlayer, VideoView } from 'expo-video';
+import * as ScreenOrientation from 'expo-screen-orientation';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAppStore } from '../src/store/useAppStore';
 import { usePlayerStore } from '../src/store/usePlayerStore';
+import { aggregator } from '../src/providers/aggregator';
 import { ProviderId, Release } from '../src/types/models';
 import { QualityBadge } from '../src/components/QualityBadge';
-
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+import { cleanDisplayTitle } from '../src/utils/title';
 
 export default function PlayerScreen() {
   const router = useRouter();
@@ -33,38 +34,105 @@ export default function PlayerScreen() {
     resumeSeconds?: string;
   }>();
 
-  const { saveProgress } = useAppStore();
-  const { availableReleases } = usePlayerStore();
+  const saveProgress = useAppStore((s) => s.saveProgress);
+  const availableReleases = usePlayerStore((s) => s.availableReleases);
+  const activeSource = usePlayerStore((s) => s.activeSource);
 
   const [currentUrl, setCurrentUrl] = useState(params.streamUrl);
-  const [controlsVisible, setControlsVisible] = useState(true);
-  const [isPlaying, setIsPlaying] = useState(true);
-  const [duration, setDuration] = useState(0);
-  const [currentTime, setCurrentTime] = useState(0);
+  const [playerStatus, setPlayerStatus] = useState<'idle' | 'loading' | 'readyToPlay' | 'error'>('loading');
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [audioModalVisible, setAudioModalVisible] = useState(false);
+  const [isResolvingSwitch, setIsResolvingSwitch] = useState<string | null>(null);
   const [availableAudioTracks, setAvailableAudioTracks] = useState<any[]>([]);
   const [selectedAudioTrackId, setSelectedAudioTrackId] = useState<string | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isLandscape, setIsLandscape] = useState(false);
 
-  const controlsTimeout = useRef<any>(null);
+  const videoViewRef = useRef<any>(null);
   const initialSeekDone = useRef(false);
 
-  // Initialize expo-video player
-  const player = useVideoPlayer(currentUrl, (p) => {
-    p.loop = false;
-    p.play();
-  });
+  // Initialize expo-video player with native ExoPlayer backend
+  const player = useVideoPlayer(
+    {
+      uri: currentUrl,
+      headers: activeSource?.headers,
+    },
+    (p) => {
+      p.loop = false;
+      p.play();
+    }
+  );
 
-  // Handle play/pause, time updates, and audio tracks
+  // Orientation tracking and reset on unmount
+  useEffect(() => {
+    let sub: ScreenOrientation.Subscription | null = null;
+
+    async function checkInitialOrientation() {
+      try {
+        const o = await ScreenOrientation.getOrientationAsync();
+        const land =
+          o === ScreenOrientation.Orientation.LANDSCAPE_LEFT ||
+          o === ScreenOrientation.Orientation.LANDSCAPE_RIGHT;
+        setIsLandscape(land);
+
+        sub = ScreenOrientation.addOrientationChangeListener((evt) => {
+          const cur = evt.orientationInfo.orientation;
+          const isLand =
+            cur === ScreenOrientation.Orientation.LANDSCAPE_LEFT ||
+            cur === ScreenOrientation.Orientation.LANDSCAPE_RIGHT;
+          setIsLandscape(isLand);
+        });
+      } catch {
+        // Ignored
+      }
+    }
+
+    checkInitialOrientation();
+
+    return () => {
+      // Revert orientation lock when leaving player
+      ScreenOrientation.unlockAsync().catch(() => {});
+      if (sub) {
+        ScreenOrientation.removeOrientationChangeListener(sub);
+      }
+    };
+  }, []);
+
+  // Track player events
+  useEffect(() => {
+    if (!player) return;
+
+    const statusSub = player.addListener('statusChange', (payload: any) => {
+      const status = payload?.status || player.status;
+      setPlayerStatus(status);
+      if (status === 'error') {
+        setErrorMessage(payload?.error?.message || 'Failed playing stream mirror');
+      } else if (status === 'readyToPlay') {
+        setErrorMessage(null);
+      }
+    });
+
+    const audioSub = player.addListener('availableAudioTracksChange', (payload: any) => {
+      const tracks = payload?.availableAudioTracks || player.availableAudioTracks || [];
+      if (tracks.length > 0) {
+        setAvailableAudioTracks(tracks);
+      }
+    });
+
+    return () => {
+      statusSub?.remove?.();
+      audioSub?.remove?.();
+    };
+  }, [player]);
+
+  // Periodic progress saving & audio tracks detection
   useEffect(() => {
     if (!player) return;
 
     const interval = setInterval(() => {
       try {
-        setIsPlaying(player.playing);
         const cur = player.currentTime || 0;
         const dur = player.duration || 0;
-        setCurrentTime(cur);
-        setDuration(dur);
 
         // Resume position on initial load
         if (!initialSeekDone.current && dur > 0) {
@@ -87,51 +155,50 @@ export default function PlayerScreen() {
           });
         }
 
-        // Fetch container audio tracks
         if (player.availableAudioTracks && player.availableAudioTracks.length > 0) {
           setAvailableAudioTracks(player.availableAudioTracks);
         }
-      } catch (err) {
+      } catch {
         // Ignored
       }
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [player, params]);
+  }, [player, params, saveProgress]);
 
-  const resetControlsTimeout = () => {
-    if (controlsTimeout.current) clearTimeout(controlsTimeout.current);
-    setControlsVisible(true);
-    controlsTimeout.current = setTimeout(() => {
-      setControlsVisible(false);
-    }, 4000);
-  };
-
-  const toggleControls = () => {
-    if (controlsVisible) {
-      setControlsVisible(false);
-      if (controlsTimeout.current) clearTimeout(controlsTimeout.current);
-    } else {
-      resetControlsTimeout();
+  // Manual rotation toggle: Vertical (Portrait) <-> Horizontal (Landscape)
+  const toggleRotation = async () => {
+    try {
+      if (isLandscape) {
+        await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+        setIsLandscape(false);
+      } else {
+        await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
+        setIsLandscape(true);
+      }
+    } catch (err) {
+      console.warn('Rotation toggle failed:', err);
     }
   };
 
-  const handlePlayPause = () => {
-    if (!player) return;
-    if (player.playing) {
-      player.pause();
-      setIsPlaying(false);
-    } else {
-      player.play();
-      setIsPlaying(true);
+  const handleToggleFullscreen = async () => {
+    try {
+      if (videoViewRef.current) {
+        if (!isFullscreen) {
+          await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
+          setIsLandscape(true);
+          await videoViewRef.current.enterFullscreen();
+          setIsFullscreen(true);
+        } else {
+          await videoViewRef.current.exitFullscreen();
+          setIsFullscreen(false);
+          await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+          setIsLandscape(false);
+        }
+      }
+    } catch (err) {
+      console.warn('Toggle fullscreen failed:', err);
     }
-    resetControlsTimeout();
-  };
-
-  const seekRelative = (seconds: number) => {
-    if (!player) return;
-    player.seekBy(seconds);
-    resetControlsTimeout();
   };
 
   const handleSelectAudioTrack = (track: any) => {
@@ -146,118 +213,147 @@ export default function PlayerScreen() {
     setAudioModalVisible(false);
   };
 
-  const handleSwitchRelease = (rel: Release) => {
-    const mirror = rel.mirrors[0];
-    if (mirror && mirror.resolverUrl) {
-      setCurrentUrl(mirror.resolverUrl);
+  const handleSwitchRelease = async (rel: Release) => {
+    setIsResolvingSwitch(rel.filename);
+    try {
+      const source = await aggregator.resolveWithFallback([rel]);
+      if (player) {
+        player.replace({
+          uri: source.url,
+          headers: source.headers,
+        });
+        player.play();
+      }
+      setCurrentUrl(source.url);
       initialSeekDone.current = false;
+      setErrorMessage(null);
       setAudioModalVisible(false);
+    } catch (err: any) {
+      Alert.alert('Switch Failed', err.message || 'Could not resolve selected release mirror');
+    } finally {
+      setIsResolvingSwitch(null);
     }
   };
 
-  const formatTime = (seconds: number) => {
-    const s = Math.floor(seconds || 0);
-    const mins = Math.floor(s / 60);
-    const secs = s % 60;
-    const hrs = Math.floor(mins / 60);
-    const remMins = mins % 60;
-
-    if (hrs > 0) {
-      return `${hrs}:${remMins < 10 ? '0' : ''}${remMins}:${secs < 10 ? '0' : ''}${secs}`;
-    }
-    return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
-  };
-
-  const progressPercent = duration > 0 ? (currentTime / duration) * 100 : 0;
+  const cleanedTitle = cleanDisplayTitle(params.title || 'Video Player');
 
   return (
     <View style={styles.container}>
       <StatusBar hidden />
 
-      <TouchableOpacity
-        activeOpacity={1}
-        onPress={toggleControls}
-        style={styles.videoTouchable}>
+      {/* 1. Native Video Player with ExoPlayer Controls Enabled */}
+      <View style={StyleSheet.absoluteFillObject}>
         <VideoView
+          ref={videoViewRef}
           player={player}
           style={styles.videoView}
-          nativeControls={false}
+          nativeControls={true}
           contentFit="contain"
+          surfaceType="textureView"
           allowsPictureInPicture
           startsPictureInPictureAutomatically
-          fullscreenOptions={{ enable: true }}
+          fullscreenOptions={{
+            enable: true,
+            orientation: 'landscape',
+          }}
+          onFullscreenEnter={async () => {
+            setIsFullscreen(true);
+            setIsLandscape(true);
+            await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE).catch(() => {});
+          }}
+          onFullscreenExit={async () => {
+            setIsFullscreen(false);
+            setIsLandscape(false);
+            await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
+          }}
         />
+      </View>
 
-        {/* Overlay Controls */}
-        {controlsVisible && (
-          <View style={styles.controlsOverlay}>
-            {/* Top Bar */}
-            <View style={[styles.topBar, { paddingTop: insets.top + 8 }]}>
-              <TouchableOpacity
-                onPress={() => router.back()}
-                style={styles.iconButton}>
-                <Ionicons name="arrow-back" size={24} color="#ffffff" />
-              </TouchableOpacity>
+      {/* 2. Floating Top Header Bar */}
+      <View
+        style={[
+          styles.topBar,
+          { paddingTop: Math.max(insets.top, 14), paddingBottom: 10 },
+        ]}
+        pointerEvents="box-none">
+        <TouchableOpacity
+          onPress={async () => {
+            await ScreenOrientation.unlockAsync().catch(() => {});
+            router.back();
+          }}
+          style={styles.iconButton}
+          activeOpacity={0.7}>
+          <Ionicons name="arrow-back" size={24} color="#ffffff" />
+        </TouchableOpacity>
 
-              <Text numberOfLines={1} style={styles.headerTitle}>
-                {params.title}
-              </Text>
+        <Text numberOfLines={1} style={styles.headerTitle}>
+          {cleanedTitle}
+        </Text>
 
-              <View style={styles.topRightActions}>
-                {/* Audio Tracks / Quality Switcher */}
-                <TouchableOpacity
-                  onPress={() => setAudioModalVisible(true)}
-                  style={styles.iconButton}>
-                  <Ionicons name="options-outline" size={22} color="#ffffff" />
-                </TouchableOpacity>
-              </View>
-            </View>
+        <View style={styles.topRightActions} pointerEvents="box-none">
+          {/* Rotate Vertical / Horizontal Button */}
+          <TouchableOpacity
+            onPress={toggleRotation}
+            style={styles.rotateButton}
+            activeOpacity={0.75}>
+            <Ionicons
+              name={isLandscape ? 'phone-portrait-outline' : 'phone-landscape-outline'}
+              size={16}
+              color="#ffffff"
+            />
+            <Text style={styles.rotateText}>
+              {isLandscape ? 'Vertical' : 'Horizontal'}
+            </Text>
+          </TouchableOpacity>
 
-            {/* Center Controls (Skip -10s, Play/Pause, Skip +10s) */}
-            <View style={styles.centerControls}>
-              <TouchableOpacity
-                onPress={() => seekRelative(-10)}
-                style={styles.skipButton}>
-                <Ionicons name="play-back" size={28} color="#ffffff" />
-                <Text style={styles.skipText}>10s</Text>
-              </TouchableOpacity>
+          {/* Fullscreen Button */}
+          <TouchableOpacity
+            onPress={handleToggleFullscreen}
+            style={styles.iconButton}
+            activeOpacity={0.7}>
+            <Ionicons
+              name={isFullscreen ? 'contract' : 'expand'}
+              size={20}
+              color="#ffffff"
+            />
+          </TouchableOpacity>
 
-              <TouchableOpacity
-                onPress={handlePlayPause}
-                style={styles.playPauseButton}>
-                <Ionicons
-                  name={isPlaying ? 'pause' : 'play'}
-                  size={36}
-                  color="#ffffff"
-                />
-              </TouchableOpacity>
+          {/* Quality & Audio Switcher Modal */}
+          <TouchableOpacity
+            onPress={() => setAudioModalVisible(true)}
+            style={styles.iconButton}
+            activeOpacity={0.7}>
+            <Ionicons name="options-outline" size={22} color="#ffffff" />
+          </TouchableOpacity>
+        </View>
+      </View>
 
-              <TouchableOpacity
-                onPress={() => seekRelative(10)}
-                style={styles.skipButton}>
-                <Ionicons name="play-forward" size={28} color="#ffffff" />
-                <Text style={styles.skipText}>10s</Text>
-              </TouchableOpacity>
-            </View>
+      {/* 3. Buffering Indicator */}
+      {playerStatus === 'loading' && (
+        <View style={styles.loadingOverlay} pointerEvents="none">
+          <ActivityIndicator size="large" color="#e50914" />
+          <Text style={styles.loadingText}>Buffering stream...</Text>
+        </View>
+      )}
 
-            {/* Bottom Scrubber & Time Bar */}
-            <View style={[styles.bottomBar, { paddingBottom: insets.bottom + 12 }]}>
-              <View style={styles.timeRow}>
-                <Text style={styles.timeText}>{formatTime(currentTime)}</Text>
-                <Text style={styles.timeText}>{formatTime(duration)}</Text>
-              </View>
+      {/* 4. Playback Error Overlay */}
+      {playerStatus === 'error' && (
+        <View style={styles.errorOverlay}>
+          <Ionicons name="alert-circle-outline" size={48} color="#e50914" />
+          <Text style={styles.errorTitle}>Stream Playback Error</Text>
+          <Text style={styles.errorSubtitle}>
+            {errorMessage || 'Cannot play stream from current mirror.'}
+          </Text>
+          <TouchableOpacity
+            style={styles.switchStreamBtn}
+            onPress={() => setAudioModalVisible(true)}>
+            <Ionicons name="options-outline" size={18} color="#ffffff" />
+            <Text style={styles.switchStreamText}>Switch Source / Quality</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
-              <View style={styles.progressContainer}>
-                <View style={styles.progressTrack}>
-                  <View style={[styles.progressFill, { width: `${progressPercent}%` }]} />
-                </View>
-              </View>
-            </View>
-          </View>
-        )}
-      </TouchableOpacity>
-
-      {/* Audio Track & Quality Switcher Modal */}
+      {/* 5. Audio Track & Quality Switcher Modal */}
       <Modal
         visible={audioModalVisible}
         transparent
@@ -277,13 +373,16 @@ export default function PlayerScreen() {
               <Text style={styles.modalSectionTitle}>EMBEDDED AUDIO TRACKS</Text>
               {availableAudioTracks.length > 0 ? (
                 availableAudioTracks.map((track, i) => {
-                  const label = track.label || track.language || `Track ${i + 1}`;
+                  const label = track.label || track.language || `Audio Track ${i + 1}`;
                   const isSelected = selectedAudioTrackId === (track.id || track.language || label);
 
                   return (
                     <TouchableOpacity
-                      key={i}
-                      style={[styles.modalItem, isSelected && styles.modalItemSelected]}
+                      key={track.id || i}
+                      style={[
+                        styles.modalItem,
+                        isSelected && styles.modalItemSelected,
+                      ]}
                       onPress={() => handleSelectAudioTrack(track)}>
                       <Ionicons
                         name="volume-high"
@@ -315,19 +414,26 @@ export default function PlayerScreen() {
               {availableReleases.length > 0 && (
                 <>
                   <Text style={[styles.modalSectionTitle, { marginTop: 16 }]}>
-                    SWITCH QUALITY / SOURCE
+                    SWITCH QUALITY / MIRROR
                   </Text>
-                  {availableReleases.map((rel, i) => (
-                    <TouchableOpacity
-                      key={i}
-                      style={styles.modalItem}
-                      onPress={() => handleSwitchRelease(rel)}>
-                      <QualityBadge quality={rel.quality} />
-                      <Text numberOfLines={1} style={styles.modalReleaseName}>
-                        {rel.filename}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
+                  {availableReleases.map((rel, i) => {
+                    const isResolving = isResolvingSwitch === rel.filename;
+                    return (
+                      <TouchableOpacity
+                        key={i}
+                        style={styles.modalItem}
+                        disabled={isResolvingSwitch !== null}
+                        onPress={() => handleSwitchRelease(rel)}>
+                        <QualityBadge quality={rel.quality} />
+                        <Text numberOfLines={1} style={styles.modalReleaseName}>
+                          {rel.filename}
+                        </Text>
+                        {isResolving && (
+                          <ActivityIndicator size="small" color="#e50914" />
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
                 </>
               )}
             </ScrollView>
@@ -343,23 +449,22 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#000000',
   },
-  videoTouchable: {
-    flex: 1,
-  },
   videoView: {
     width: '100%',
     height: '100%',
   },
-  controlsOverlay: {
-    ...StyleSheet.absoluteFill,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    justifyContent: 'space-between',
-  },
   topBar: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 10,
+    elevation: 10,
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    gap: 12,
+    gap: 10,
+    backgroundColor: 'rgba(0,0,0,0.45)',
   },
   iconButton: {
     width: 40,
@@ -368,6 +473,22 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.5)',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  rotateButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 18,
+    gap: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.25)',
+  },
+  rotateText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '700',
   },
   headerTitle: {
     flex: 1,
@@ -380,57 +501,55 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
   },
-  centerControls: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.4)',
     justifyContent: 'center',
-    gap: 36,
-  },
-  skipButton: {
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: 12,
+    zIndex: 5,
   },
-  skipText: {
+  loadingText: {
     color: '#ffffff',
-    fontSize: 11,
-    fontWeight: '700',
-    marginTop: 2,
-  },
-  playPauseButton: {
-    width: 68,
-    height: 68,
-    borderRadius: 34,
-    backgroundColor: 'rgba(229, 9, 20, 0.9)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  bottomBar: {
-    paddingHorizontal: 20,
-    gap: 8,
-  },
-  timeRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  timeText: {
-    color: '#dddddd',
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '600',
   },
-  progressContainer: {
-    width: '100%',
-    height: 12,
+  errorOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(10,10,15,0.95)',
     justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+    gap: 10,
+    zIndex: 20,
+    elevation: 20,
   },
-  progressTrack: {
-    height: 4,
-    backgroundColor: 'rgba(255,255,255,0.3)',
-    borderRadius: 2,
-    overflow: 'hidden',
+  errorTitle: {
+    color: '#ffffff',
+    fontSize: 18,
+    fontWeight: '800',
+    marginTop: 8,
   },
-  progressFill: {
-    height: '100%',
+  errorSubtitle: {
+    color: '#8e8e9e',
+    fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+  switchStreamBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: '#e50914',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 8,
+    gap: 8,
+    marginTop: 12,
+  },
+  switchStreamText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '700',
   },
   modalBackdrop: {
     flex: 1,
@@ -438,27 +557,28 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalSheet: {
-    backgroundColor: '#12121a',
+    backgroundColor: '#161622',
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
-    padding: 20,
-    maxHeight: '65%',
-    borderWidth: 1,
-    borderColor: '#222232',
+    maxHeight: '75%',
+    paddingBottom: 32,
   },
   modalHeader: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 16,
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#242436',
   },
   modalTitle: {
     color: '#ffffff',
-    fontSize: 17,
-    fontWeight: '800',
+    fontSize: 16,
+    fontWeight: '700',
   },
   modalScroll: {
-    paddingBottom: 20,
+    padding: 16,
   },
   modalSectionTitle: {
     color: '#777788',
@@ -470,10 +590,9 @@ const styles = StyleSheet.create({
   modalItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 12,
+    backgroundColor: '#1f1f2e',
+    padding: 12,
     borderRadius: 8,
-    backgroundColor: '#181824',
     marginBottom: 8,
     gap: 10,
   },
@@ -483,12 +602,12 @@ const styles = StyleSheet.create({
   },
   modalItemText: {
     flex: 1,
-    color: '#e0e0e0',
+    color: '#d1d1db',
     fontSize: 13,
     fontWeight: '600',
   },
   modalItemTextSelected: {
-    color: '#e50914',
+    color: '#ffffff',
     fontWeight: '700',
   },
   modalReleaseName: {

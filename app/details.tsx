@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -18,96 +18,211 @@ import {
   MediaDetails,
   ProviderId,
   Release,
-  PlaybackSource,
 } from '../src/types/models';
 import { ProviderBadge } from '../src/components/ProviderBadge';
 import { QualityBadge } from '../src/components/QualityBadge';
 import { useAppStore } from '../src/store/useAppStore';
 import { usePlayerStore } from '../src/store/usePlayerStore';
+import { cleanDisplayTitle } from '../src/utils/title';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 export default function DetailsScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const params = useLocalSearchParams<{
+
+  // Extract primitive route params
+  const {
+    provider,
+    id: mediaId,
+    title: paramTitle = '',
+    year: paramYear,
+    posterUrl: paramPosterUrl,
+    mediaType: paramMediaType,
+    resumeSeconds: paramResumeSeconds,
+  } = useLocalSearchParams<{
     provider: ProviderId;
     id: string;
-    title: string;
+    title?: string;
     year?: string;
     posterUrl?: string;
     mediaType?: 'movie' | 'series';
     resumeSeconds?: string;
   }>();
 
-  const { isFavorite, toggleFavorite } = useAppStore();
-  const { setPlayback, setAvailableReleases } = usePlayerStore();
+  // Selective Zustand hooks to avoid unnecessary re-renders
+  const isFavorite = useAppStore((s) => s.isFavorite);
+  const toggleFavorite = useAppStore((s) => s.toggleFavorite);
+  const setPlayback = usePlayerStore((s) => s.setPlayback);
+  const setAvailableReleases = usePlayerStore((s) => s.setAvailableReleases);
 
   const [details, setDetails] = useState<MediaDetails | null>(null);
   const [releases, setReleases] = useState<Release[]>([]);
   const [loadingReleases, setLoadingReleases] = useState(true);
   const [resolvingRelease, setResolvingRelease] = useState<string | null>(null);
 
-  const mediaId = params.id;
-  const provider = params.provider;
+  // Quality & Series Organization States
+  const [selectedQuality, setSelectedQuality] = useState<string>('all');
+  const [selectedSeason, setSelectedSeason] = useState<number | 'packs' | 'all'>('all');
+  const [selectedEpisode, setSelectedEpisode] = useState<number | 'all'>('all');
+
   const isFav = isFavorite(mediaId);
 
-  const loadMedia = useCallback(async () => {
-    try {
-      setLoadingReleases(true);
-      const prov = aggregator.getProvider(provider);
+  // Load media and releases once per unique (provider, mediaId)
+  useEffect(() => {
+    let active = true;
 
-      // Fetch details
-      if (prov) {
-        try {
-          const d = await prov.details(mediaId);
-          setDetails(d);
-        } catch {
-          // Fallback to basic details
-          setDetails({
-            id: { provider, value: mediaId },
-            title: params.title || 'Unknown Title',
-            mediaType: params.mediaType || 'movie',
-            year: params.year,
-            posterUrl: params.posterUrl,
-            genres: [],
-            dubs: [],
-            seasons: [],
-          });
+    async function load() {
+      if (!provider || !mediaId) return;
+
+      try {
+        setLoadingReleases(true);
+        const prov = aggregator.getProvider(provider);
+
+        if (prov) {
+          try {
+            const d = await prov.details(mediaId);
+            if (active) setDetails(d);
+          } catch {
+            if (active) {
+              setDetails({
+                id: { provider, value: mediaId },
+                title: paramTitle || 'Unknown Title',
+                mediaType: paramMediaType || 'movie',
+                year: paramYear,
+                posterUrl: paramPosterUrl,
+                genres: [],
+                dubs: [],
+                seasons: [],
+              });
+            }
+          }
+        }
+
+        const rels = await aggregator.getAllReleases([{ provider, id: mediaId }]);
+        if (active) {
+          setReleases(rels);
+          setAvailableReleases(rels);
+
+          const seasonsFound = Array.from(
+            new Set(rels.filter((r) => r.season !== undefined).map((r) => r.season!))
+          ).sort((a, b) => a - b);
+
+          if (seasonsFound.length > 0) {
+            setSelectedSeason(seasonsFound[0]);
+          }
+        }
+      } catch (err) {
+        console.warn('Failed loading releases:', err);
+      } finally {
+        if (active) {
+          setLoadingReleases(false);
+        }
+      }
+    }
+
+    load();
+
+    return () => {
+      active = false;
+    };
+  }, [provider, mediaId]);
+
+  const isSeries =
+    paramMediaType === 'series' ||
+    details?.mediaType === 'series' ||
+    releases.some((r) => r.season !== undefined || r.episode !== undefined);
+
+  // Available seasons list
+  const availableSeasons = useMemo(() => {
+    const set = new Set<number>();
+    let hasPacks = false;
+    for (const r of releases) {
+      if (r.season !== undefined) set.add(r.season);
+      if (r.episode === undefined && /pack|complete/i.test(r.filename)) hasPacks = true;
+    }
+    return {
+      seasons: Array.from(set).sort((a, b) => a - b),
+      hasPacks,
+    };
+  }, [releases]);
+
+  // Available episodes for selected season
+  const availableEpisodes = useMemo(() => {
+    if (selectedSeason === 'all' || selectedSeason === 'packs') return [];
+    const eps = new Set<number>();
+    for (const r of releases) {
+      if (r.season === selectedSeason && r.episode !== undefined) {
+        eps.add(r.episode);
+      }
+    }
+    return Array.from(eps).sort((a, b) => a - b);
+  }, [releases, selectedSeason]);
+
+  // Filtered releases based on Season, Episode and Quality
+  const filteredReleases = useMemo(() => {
+    return releases.filter((r) => {
+      // 1. Season filter
+      if (isSeries && availableSeasons.seasons.length > 0) {
+        if (selectedSeason === 'packs') {
+          if (r.episode !== undefined) return false;
+        } else if (selectedSeason !== 'all') {
+          if (r.season !== undefined && r.season !== selectedSeason) return false;
         }
       }
 
-      // Collate releases
-      const rels = await aggregator.getAllReleases([{ provider, id: mediaId }]);
-      setReleases(rels);
-      setAvailableReleases(rels);
-    } catch (err) {
-      console.warn('Failed loading releases:', err);
-    } finally {
-      setLoadingReleases(false);
-    }
-  }, [provider, mediaId]);
+      // 2. Episode filter
+      if (selectedEpisode !== 'all' && selectedSeason !== 'packs') {
+        if (r.episode !== undefined && r.episode !== selectedEpisode) return false;
+      }
 
-  useEffect(() => {
-    loadMedia();
-  }, [loadMedia]);
+      // 3. Quality filter
+      if (selectedQuality !== 'all') {
+        const q = (r.quality || '').toLowerCase();
+        if (selectedQuality === '4k' && !q.includes('4k') && !q.includes('2160')) return false;
+        if (selectedQuality === '1080p' && !q.includes('1080')) return false;
+        if (selectedQuality === '720p' && !q.includes('720')) return false;
+        if (selectedQuality === '480p' && !q.includes('480')) return false;
+      }
+
+      return true;
+    });
+  }, [releases, isSeries, availableSeasons, selectedSeason, selectedEpisode, selectedQuality]);
+
+  // Quality counts for badges
+  const qualityCounts = useMemo(() => {
+    let count4k = 0;
+    let count1080 = 0;
+    let count720 = 0;
+    let count480 = 0;
+
+    for (const r of releases) {
+      const q = (r.quality || '').toLowerCase();
+      if (q.includes('4k') || q.includes('2160')) count4k++;
+      else if (q.includes('1080')) count1080++;
+      else if (q.includes('720')) count720++;
+      else if (q.includes('480')) count480++;
+    }
+
+    return { total: releases.length, count4k, count1080, count720, count480 };
+  }, [releases]);
 
   const handlePlayRelease = async (release: Release) => {
     setResolvingRelease(release.filename);
     try {
       const source = await aggregator.resolveWithFallback([release]);
-      const resumeSec = params.resumeSeconds ? parseInt(params.resumeSeconds, 10) : 0;
+      const resumeSec = paramResumeSeconds ? parseInt(paramResumeSeconds, 10) : 0;
 
       setPlayback(source, release, resumeSec);
 
       router.push({
         pathname: '/player',
         params: {
-          title: params.title || details?.title || release.filename,
+          title: cleanDisplayTitle(paramTitle || details?.title || release.filename),
           streamUrl: source.url,
           mediaId,
           provider,
-          posterUrl: params.posterUrl || details?.posterUrl || '',
+          posterUrl: paramPosterUrl || details?.posterUrl || '',
           resumeSeconds: resumeSec.toString(),
         },
       });
@@ -119,23 +234,24 @@ export default function DetailsScreen() {
   };
 
   const handleQuickPlay = async () => {
-    if (releases.length === 0) return;
+    const pool = filteredReleases.length > 0 ? filteredReleases : releases;
+    if (pool.length === 0) return;
     setResolvingRelease('quick_play');
     try {
-      const source = await aggregator.resolveWithFallback(releases);
-      const chosenRelease = releases[0];
-      const resumeSec = params.resumeSeconds ? parseInt(params.resumeSeconds, 10) : 0;
+      const source = await aggregator.resolveWithFallback(pool);
+      const chosenRelease = pool[0];
+      const resumeSec = paramResumeSeconds ? parseInt(paramResumeSeconds, 10) : 0;
 
       setPlayback(source, chosenRelease, resumeSec);
 
       router.push({
         pathname: '/player',
         params: {
-          title: params.title || details?.title || 'Video Player',
+          title: cleanDisplayTitle(paramTitle || details?.title || 'Video Player'),
           streamUrl: source.url,
           mediaId,
           provider,
-          posterUrl: params.posterUrl || details?.posterUrl || '',
+          posterUrl: paramPosterUrl || details?.posterUrl || '',
           resumeSeconds: resumeSec.toString(),
         },
       });
@@ -146,8 +262,9 @@ export default function DetailsScreen() {
     }
   };
 
-  const poster = details?.posterUrl || params.posterUrl;
+  const poster = details?.posterUrl || paramPosterUrl;
   const backdrop = details?.backdropUrl || poster;
+  const displayTitle = cleanDisplayTitle(details?.title || paramTitle);
 
   return (
     <View style={styles.container}>
@@ -166,10 +283,10 @@ export default function DetailsScreen() {
             toggleFavorite({
               mediaId,
               provider,
-              title: params.title || details?.title || '',
-              mediaType: params.mediaType || 'movie',
+              title: paramTitle || details?.title || '',
+              mediaType: isSeries ? 'series' : 'movie',
               posterUrl: poster,
-              year: params.year,
+              year: paramYear,
             })
           }
           activeOpacity={0.7}>
@@ -212,15 +329,15 @@ export default function DetailsScreen() {
                 )}
               </View>
 
-              <Text style={styles.title}>{details?.title || params.title}</Text>
+              <Text style={styles.title}>{displayTitle}</Text>
 
               <View style={styles.infoMetaRow}>
-                {params.year ? <Text style={styles.metaText}>{params.year}</Text> : null}
+                {paramYear ? <Text style={styles.metaText}>{paramYear}</Text> : null}
                 {details?.duration ? (
                   <Text style={styles.metaText}>{details.duration}</Text>
                 ) : null}
                 <Text style={styles.mediaTypeText}>
-                  {(params.mediaType || 'movie').toUpperCase()}
+                  {(isSeries ? 'SERIES' : 'MOVIE')}
                 </Text>
               </View>
             </View>
@@ -238,7 +355,11 @@ export default function DetailsScreen() {
               <>
                 <Ionicons name="play" size={20} color="#ffffff" />
                 <Text style={styles.quickPlayText}>
-                  {releases.length > 0 ? `Play in ${releases[0].quality}` : 'Finding Streams...'}
+                  {filteredReleases.length > 0
+                    ? `Play ${filteredReleases[0].quality}`
+                    : releases.length > 0
+                    ? `Play in ${releases[0].quality}`
+                    : 'Finding Streams...'}
                 </Text>
               </>
             )}
@@ -267,9 +388,9 @@ export default function DetailsScreen() {
                         params: {
                           provider: 'moviebox',
                           id: dub.subjectId,
-                          title: `${params.title} (${dub.language})`,
-                          posterUrl: params.posterUrl,
-                          mediaType: params.mediaType,
+                          title: `${paramTitle} (${dub.language})`,
+                          posterUrl: paramPosterUrl,
+                          mediaType: paramMediaType,
                         },
                       });
                     }}>
@@ -281,20 +402,149 @@ export default function DetailsScreen() {
             </View>
           )}
 
-          {/* Available Quality Releases */}
+          {/* Series Organization & Filters */}
           <View style={styles.releasesContainer}>
             <View style={styles.releasesHeaderRow}>
-              <Text style={styles.sectionHeader}>AVAILABLE RELEASES ({releases.length})</Text>
+              <Text style={styles.sectionHeader}>
+                RELEASES ({filteredReleases.length}/{releases.length})
+              </Text>
               <Text style={styles.releasesSub}>Auto-Failover enabled</Text>
             </View>
 
+            {/* Quality Filter Pills */}
+            <View style={styles.qualityPillsRow}>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                <TouchableOpacity
+                  style={[styles.qualityPill, selectedQuality === 'all' && styles.qualityPillActive]}
+                  onPress={() => setSelectedQuality('all')}>
+                  <Text style={[styles.qualityPillText, selectedQuality === 'all' && styles.qualityPillTextActive]}>
+                    All ({qualityCounts.total})
+                  </Text>
+                </TouchableOpacity>
+
+                {qualityCounts.count4k > 0 && (
+                  <TouchableOpacity
+                    style={[styles.qualityPill, selectedQuality === '4k' && styles.qualityPillActive]}
+                    onPress={() => setSelectedQuality('4k')}>
+                    <Text style={[styles.qualityPillText, selectedQuality === '4k' && styles.qualityPillTextActive]}>
+                      4K UHD ({qualityCounts.count4k})
+                    </Text>
+                  </TouchableOpacity>
+                )}
+
+                {qualityCounts.count1080 > 0 && (
+                  <TouchableOpacity
+                    style={[styles.qualityPill, selectedQuality === '1080p' && styles.qualityPillActive]}
+                    onPress={() => setSelectedQuality('1080p')}>
+                    <Text style={[styles.qualityPillText, selectedQuality === '1080p' && styles.qualityPillTextActive]}>
+                      1080p FHD ({qualityCounts.count1080})
+                    </Text>
+                  </TouchableOpacity>
+                )}
+
+                {qualityCounts.count720 > 0 && (
+                  <TouchableOpacity
+                    style={[styles.qualityPill, selectedQuality === '720p' && styles.qualityPillActive]}
+                    onPress={() => setSelectedQuality('720p')}>
+                    <Text style={[styles.qualityPillText, selectedQuality === '720p' && styles.qualityPillTextActive]}>
+                      720p HD ({qualityCounts.count720})
+                    </Text>
+                  </TouchableOpacity>
+                )}
+
+                {qualityCounts.count480 > 0 && (
+                  <TouchableOpacity
+                    style={[styles.qualityPill, selectedQuality === '480p' && styles.qualityPillActive]}
+                    onPress={() => setSelectedQuality('480p')}>
+                    <Text style={[styles.qualityPillText, selectedQuality === '480p' && styles.qualityPillTextActive]}>
+                      480p ({qualityCounts.count480})
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </ScrollView>
+            </View>
+
+            {/* Season Tabs (for TV Series) */}
+            {isSeries && availableSeasons.seasons.length > 0 && (
+              <View style={styles.seasonsSection}>
+                <Text style={styles.subSectionTitle}>SEASONS</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.seasonsScroll}>
+                  {availableSeasons.seasons.map((s) => (
+                    <TouchableOpacity
+                      key={`s_${s}`}
+                      style={[styles.seasonTab, selectedSeason === s && styles.seasonTabActive]}
+                      onPress={() => {
+                        setSelectedSeason(s);
+                        setSelectedEpisode('all');
+                      }}>
+                      <Text style={[styles.seasonTabText, selectedSeason === s && styles.seasonTabTextActive]}>
+                        Season {s}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+
+                  {availableSeasons.hasPacks && (
+                    <TouchableOpacity
+                      style={[styles.seasonTab, selectedSeason === 'packs' && styles.seasonTabActive]}
+                      onPress={() => {
+                        setSelectedSeason('packs');
+                        setSelectedEpisode('all');
+                      }}>
+                      <Text style={[styles.seasonTabText, selectedSeason === 'packs' && styles.seasonTabTextActive]}>
+                        Complete Packs
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+
+                  <TouchableOpacity
+                    style={[styles.seasonTab, selectedSeason === 'all' && styles.seasonTabActive]}
+                    onPress={() => {
+                      setSelectedSeason('all');
+                      setSelectedEpisode('all');
+                    }}>
+                    <Text style={[styles.seasonTabText, selectedSeason === 'all' && styles.seasonTabTextActive]}>
+                      All Seasons
+                    </Text>
+                  </TouchableOpacity>
+                </ScrollView>
+              </View>
+            )}
+
+            {/* Episode Grid (for TV Series when a specific season is selected) */}
+            {isSeries && availableEpisodes.length > 0 && (
+              <View style={styles.episodesSection}>
+                <Text style={styles.subSectionTitle}>EPISODES</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.episodesScroll}>
+                  <TouchableOpacity
+                    style={[styles.episodeChip, selectedEpisode === 'all' && styles.episodeChipActive]}
+                    onPress={() => setSelectedEpisode('all')}>
+                    <Text style={[styles.episodeChipText, selectedEpisode === 'all' && styles.episodeChipTextActive]}>
+                      All
+                    </Text>
+                  </TouchableOpacity>
+
+                  {availableEpisodes.map((ep) => (
+                    <TouchableOpacity
+                      key={`ep_${ep}`}
+                      style={[styles.episodeChip, selectedEpisode === ep && styles.episodeChipActive]}
+                      onPress={() => setSelectedEpisode(ep)}>
+                      <Text style={[styles.episodeChipText, selectedEpisode === ep && styles.episodeChipTextActive]}>
+                        EP {ep < 10 ? `0${ep}` : ep}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            )}
+
+            {/* Releases List */}
             {loadingReleases ? (
               <View style={styles.releasesLoading}>
                 <ActivityIndicator size="small" color="#e50914" />
                 <Text style={styles.releasesLoadingText}>Parsing HubCloud & stream mirrors...</Text>
               </View>
-            ) : releases.length > 0 ? (
-              releases.map((rel, index) => {
+            ) : filteredReleases.length > 0 ? (
+              filteredReleases.map((rel, index) => {
                 const isResolving = resolvingRelease === rel.filename;
                 const isDual = /dual|hindi/i.test(rel.filename);
 
@@ -309,6 +559,13 @@ export default function DetailsScreen() {
                       <View style={styles.releaseBadges}>
                         <QualityBadge quality={rel.quality} isDualAudio={isDual} />
                         <ProviderBadge provider={rel.provider} size="small" />
+                        {rel.season !== undefined && rel.episode !== undefined && (
+                          <View style={styles.episodeTag}>
+                            <Text style={styles.episodeTagText}>
+                              S{rel.season} E{rel.episode}
+                            </Text>
+                          </View>
+                        )}
                       </View>
                       {rel.size && <Text style={styles.releaseSize}>{rel.size}</Text>}
                     </View>
@@ -335,7 +592,18 @@ export default function DetailsScreen() {
               })
             ) : (
               <View style={styles.noReleases}>
-                <Text style={styles.noReleasesText}>No direct streams found for this release.</Text>
+                <Text style={styles.noReleasesText}>
+                  No releases found for selected season/episode/quality filter.
+                </Text>
+                <TouchableOpacity
+                  style={styles.resetFilterBtn}
+                  onPress={() => {
+                    setSelectedQuality('all');
+                    setSelectedSeason('all');
+                    setSelectedEpisode('all');
+                  }}>
+                  <Text style={styles.resetFilterText}>Reset Filters</Text>
+                </TouchableOpacity>
               </View>
             )}
           </View>
@@ -386,7 +654,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#161622',
   },
   backdropOverlay: {
-    ...StyleSheet.absoluteFill,
+    ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(10, 10, 15, 0.65)',
   },
   contentBody: {
@@ -479,6 +747,13 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
     marginBottom: 8,
   },
+  subSectionTitle: {
+    color: '#8e8e9e',
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+    marginBottom: 8,
+  },
   synopsisText: {
     color: '#cccccc',
     fontSize: 13,
@@ -520,6 +795,98 @@ const styles = StyleSheet.create({
     color: '#10b981',
     fontSize: 11,
     fontWeight: '600',
+  },
+  qualityPillsRow: {
+    marginBottom: 14,
+  },
+  qualityPill: {
+    backgroundColor: '#14141e',
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 16,
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: '#222232',
+  },
+  qualityPillActive: {
+    backgroundColor: '#e50914',
+    borderColor: '#e50914',
+  },
+  qualityPillText: {
+    color: '#8e8e9e',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  qualityPillTextActive: {
+    color: '#ffffff',
+    fontWeight: '700',
+  },
+  seasonsSection: {
+    marginBottom: 14,
+  },
+  seasonsScroll: {
+    flexDirection: 'row',
+  },
+  seasonTab: {
+    backgroundColor: '#161622',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: '#242436',
+  },
+  seasonTabActive: {
+    backgroundColor: '#252538',
+    borderColor: '#e50914',
+  },
+  seasonTabText: {
+    color: '#a0a0b2',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  seasonTabTextActive: {
+    color: '#ffffff',
+    fontWeight: '700',
+  },
+  episodesSection: {
+    marginBottom: 14,
+  },
+  episodesScroll: {
+    flexDirection: 'row',
+  },
+  episodeChip: {
+    backgroundColor: '#14141c',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+    marginRight: 6,
+    borderWidth: 1,
+    borderColor: '#20202e',
+  },
+  episodeChipActive: {
+    backgroundColor: '#e50914',
+    borderColor: '#e50914',
+  },
+  episodeChipText: {
+    color: '#7e7e90',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  episodeChipTextActive: {
+    color: '#ffffff',
+    fontWeight: '700',
+  },
+  episodeTag: {
+    backgroundColor: '#3b82f6',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  episodeTagText: {
+    color: '#ffffff',
+    fontSize: 9,
+    fontWeight: '800',
   },
   releasesLoading: {
     paddingVertical: 30,
@@ -581,11 +948,24 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   noReleases: {
-    paddingVertical: 20,
+    paddingVertical: 24,
     alignItems: 'center',
+    gap: 10,
   },
   noReleasesText: {
     color: '#666677',
     fontSize: 13,
+    textAlign: 'center',
+  },
+  resetFilterBtn: {
+    backgroundColor: '#1e1e2c',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 6,
+  },
+  resetFilterText: {
+    color: '#e50914',
+    fontSize: 12,
+    fontWeight: '700',
   },
 });

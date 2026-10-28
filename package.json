@@ -14,6 +14,7 @@
     "expo-font": "~58.0.10",
     "expo-linking": "~58.0.14",
     "expo-router": "~58.0.27",
+    "expo-screen-orientation": "~58.0.3",
     "expo-splash-screen": "~58.0.11",
     "expo-status-bar": "~58.0.4",
     "expo-symbols": "~58.0.4",
@@ -39,7 +40,7 @@
   },
   "scripts": {
     "start": "expo start",
-    "android": "expo run:android",
+    "android": "expo run:android --device",
     "ios": "expo run:ios",
     "web": "expo start --web"
   },

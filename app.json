@@ -3,7 +3,7 @@
     "name": "CineBox",
     "slug": "CineBox",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/images/icon.png",
     "scheme": "cinebox",
     "userInterfaceStyle": "dark",
