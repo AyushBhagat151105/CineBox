@@ -6,8 +6,17 @@ import { cleanDisplayTitle } from '@/utils';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
-import { ActivityIndicator, Alert, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  Image,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { ProviderBadge } from './ProviderBadge';
+import { ReleaseBadgeRow } from './ReleaseBadgeRow';
 
 interface ContinueWatchingCardProps {
   item: WatchHistoryItem;
@@ -27,6 +36,9 @@ export const ContinueWatchingCard: React.FC<ContinueWatchingCardProps> = React.m
     item.durationSeconds > 0
       ? Math.min(100, Math.round((item.positionSeconds / item.durationSeconds) * 100))
       : 0;
+
+  const isSeries = item.season !== undefined && item.episode !== undefined;
+  const imageUri = item.backdropUrl || item.posterUrl;
 
   const handleResume = async () => {
     if (isResuming) return;
@@ -57,6 +69,7 @@ export const ContinueWatchingCard: React.FC<ContinueWatchingCardProps> = React.m
           mediaId: item.mediaId,
           provider: item.provider,
           posterUrl: item.posterUrl,
+          backdropUrl: item.backdropUrl,
           releaseName: candidates[0]?.releaseName || item.releaseName,
           season: item.season,
           episode: item.episode,
@@ -104,7 +117,7 @@ export const ContinueWatchingCard: React.FC<ContinueWatchingCardProps> = React.m
     const mins = Math.floor(secs / 60);
     const hrs = Math.floor(mins / 60);
     const remainingMins = mins % 60;
-    if (hrs > 0) return `${hrs}h ${remainingMins}m`;
+    if (hrs > 0) return `${hrs}h ${remainingMins}m left`;
     return `${mins}m left`;
   };
 
@@ -112,44 +125,68 @@ export const ContinueWatchingCard: React.FC<ContinueWatchingCardProps> = React.m
 
   return (
     <TouchableOpacity
-      activeOpacity={0.85}
+      activeOpacity={0.88}
       onPress={handleResume}
       onLongPress={handleLongPress}
       style={styles.card}>
+      {/* 16:9 Widescreen Backdrop Banner */}
       <View style={styles.thumbnailContainer}>
-        {item.posterUrl ? (
-          <Image source={{ uri: item.posterUrl }} style={styles.thumbnail} />
+        {imageUri ? (
+          <Image source={{ uri: imageUri }} style={styles.thumbnail} />
         ) : (
           <View style={styles.fallbackThumbnail}>
-            <Ionicons name="film" size={24} color="#555" />
+            <Ionicons name="film-outline" size={32} color="#555" />
           </View>
         )}
 
+        {/* Top Floating Badges (Series Episode & Provider) */}
+        <View style={styles.topBadgeRow}>
+          {isSeries ? (
+            <View style={styles.seriesPill}>
+              <Text style={styles.seriesPillText}>
+                S{item.season}:E{item.episode}
+              </Text>
+            </View>
+          ) : (
+            <View />
+          )}
+          <ProviderBadge provider={item.provider} size="small" />
+        </View>
+
+        {/* Center Play Resume Button */}
         <View style={styles.playOverlay}>
           {isResuming ? (
             <ActivityIndicator size="small" color="#ffffff" />
           ) : (
-            <Ionicons name="play" size={20} color="#ffffff" />
+            <Ionicons name="play" size={20} color="#ffffff" style={{ marginLeft: 2 }} />
           )}
         </View>
 
-        {/* Progress Bar */}
+        {/* Netflix-style Sleek Progress Bar */}
         <View style={styles.progressBarBackground}>
           <View style={[styles.progressBarFill, { width: `${progressPercent}%` }]} />
         </View>
       </View>
 
+      {/* Media & Release Information */}
       <View style={styles.info}>
-        <View style={styles.badgeRow}>
-          <ProviderBadge provider={item.provider} size="small" />
+        <View style={styles.titleRow}>
+          <Text numberOfLines={1} style={styles.title}>
+            {cleanDisplayTitle(item.title)}
+          </Text>
           {timeLeft > 0 && <Text style={styles.timeLeft}>{formatTime(timeLeft)}</Text>}
         </View>
-        <Text numberOfLines={1} style={styles.title}>
-          {item.title}
-        </Text>
-        <Text numberOfLines={1} style={styles.releaseName}>
-          {item.releaseName || 'Resume playback'}
-        </Text>
+
+        {isSeries && (
+          <Text numberOfLines={1} style={styles.episodeSubtitle}>
+            {item.episodeTitle ? `Episode ${item.episode} · ${item.episodeTitle}` : `Episode ${item.episode}`}
+          </Text>
+        )}
+
+        {/* Technical Print Feature Chips (IMAX, REMUX, 4K, HDR, Audio) */}
+        <View style={styles.badgeRow}>
+          <ReleaseBadgeRow releaseName={item.releaseName} maxTags={3} />
+        </View>
       </View>
     </TouchableOpacity>
   );
@@ -157,19 +194,24 @@ export const ContinueWatchingCard: React.FC<ContinueWatchingCardProps> = React.m
 
 const styles = StyleSheet.create({
   card: {
-    width: 220,
-    backgroundColor: '#14141c',
-    borderRadius: 8,
-    marginRight: 12,
+    width: 250,
+    backgroundColor: '#12131a',
+    borderRadius: 10,
+    marginRight: 14,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: '#20202c',
+    borderColor: '#1e212d',
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 6,
   },
   thumbnailContainer: {
     width: '100%',
-    height: 120,
+    height: 140, // 16:9 widescreen ratio
     position: 'relative',
-    backgroundColor: '#1a1a24',
+    backgroundColor: '#171924',
   },
   thumbnail: {
     width: '100%',
@@ -181,53 +223,87 @@ const styles = StyleSheet.create({
     height: '100%',
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: '#171924',
+  },
+  topBadgeRow: {
+    position: 'absolute',
+    top: 8,
+    left: 8,
+    right: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    zIndex: 2,
+  },
+  seriesPill: {
+    backgroundColor: 'rgba(229, 9, 20, 0.9)',
+    paddingHorizontal: 7,
+    paddingVertical: 2.5,
+    borderRadius: 5,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.25)',
+  },
+  seriesPillText: {
+    color: '#ffffff',
+    fontSize: 10.5,
+    fontWeight: '800',
+    letterSpacing: 0.5,
   },
   playOverlay: {
     position: 'absolute',
     top: '50%',
     left: '50%',
-    transform: [{ translateX: -18 }, { translateY: -18 }],
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(229, 9, 20, 0.85)',
+    transform: [{ translateX: -20 }, { translateY: -20 }],
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.35)',
     alignItems: 'center',
     justifyContent: 'center',
+    zIndex: 2,
   },
   progressBarBackground: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    height: 4,
-    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+    height: 3.5,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
   },
   progressBarFill: {
-    height: 4,
+    height: 3.5,
     backgroundColor: '#e50914',
   },
   info: {
     padding: 10,
+    gap: 4,
   },
-  badgeRow: {
+  titleRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 4,
-  },
-  timeLeft: {
-    color: '#8e8e9e',
-    fontSize: 10,
-    fontWeight: '600',
+    gap: 8,
   },
   title: {
-    color: '#ffffff',
-    fontSize: 13,
+    flex: 1,
+    color: '#f8fafc',
+    fontSize: 13.5,
     fontWeight: '700',
-    marginBottom: 2,
+    letterSpacing: 0.2,
   },
-  releaseName: {
-    color: '#777788',
-    fontSize: 11,
+  episodeSubtitle: {
+    color: '#94a3b8',
+    fontSize: 11.5,
+    fontWeight: '500',
+  },
+  timeLeft: {
+    color: '#cbd5e1',
+    fontSize: 10.5,
+    fontWeight: '600',
+  },
+  badgeRow: {
+    marginTop: 2,
   },
 });

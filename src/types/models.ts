@@ -1,6 +1,6 @@
 import { SvgProps } from 'react-native-svg';
 
-export type ProviderId = 'hdhub4u' | 'fourkhdhub' | 'moviebox' | 'addons' | 'bdix';
+export type ProviderId = 'hdhub4u' | 'fourkhdhub' | 'addons' | 'bdix';
 
 export interface ProviderMediaId {
   provider: ProviderId;
@@ -15,6 +15,7 @@ export interface CatalogItem {
   mediaType: MediaType;
   year?: string;
   posterUrl?: string;
+  backdropUrl?: string;
   seasonCount?: number;
   rating?: string;
   description?: string;
@@ -99,12 +100,14 @@ export interface WatchHistoryItem {
   provider: ProviderId;
   title: string;
   posterUrl?: string;
+  backdropUrl?: string;
   positionSeconds: number;
   progressSeconds?: number;
   durationSeconds: number;
   releaseName?: string;
   season?: number;
   episode?: number;
+  episodeTitle?: string;
   timestamp: number;
   completed?: boolean;
 }

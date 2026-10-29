@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -19,7 +19,7 @@ import {
   ProviderId,
   Release,
 } from '@/types';
-import { ProviderBadge, QualityBadge } from '@/components';
+import { ProviderBadge, QualityBadge, ReleaseBadgeRow, TrailerPlayer, TrailerPlayerRef } from '@/components';
 import { useAppStore, usePlayerStore } from '@/store';
 import { cleanDisplayTitle } from '@/utils';
 import { vlcService } from '@/services';
@@ -50,7 +50,7 @@ export default function DetailsScreen() {
   }>();
 
   // Selective Zustand hooks to avoid unnecessary re-renders
-  const isFavorite = useAppStore((s) => s.isFavorite);
+  const isFav = useAppStore((s) => s.favorites.some((f) => f.mediaId === mediaId));
   const toggleFavorite = useAppStore((s) => s.toggleFavorite);
   const getProgress = useAppStore((s) => s.getProgress);
   const setPlayback = usePlayerStore((s) => s.setPlayback);
@@ -60,13 +60,12 @@ export default function DetailsScreen() {
   const [releases, setReleases] = useState<Release[]>([]);
   const [loadingReleases, setLoadingReleases] = useState(true);
   const [resolvingRelease, setResolvingRelease] = useState<string | null>(null);
+  const trailerRef = useRef<TrailerPlayerRef>(null);
 
   // Quality & Series Organization States
   const [selectedQuality, setSelectedQuality] = useState<string>('all');
   const [selectedSeason, setSelectedSeason] = useState<number | 'packs' | 'all'>('all');
   const [selectedEpisode, setSelectedEpisode] = useState<number | 'all'>('all');
-
-  const isFav = isFavorite(mediaId);
 
   // Load media and releases once per unique (provider, mediaId)
   useEffect(() => {
@@ -262,6 +261,7 @@ export default function DetailsScreen() {
         mediaId,
         provider,
         posterUrl: paramPosterUrl || details?.posterUrl || '',
+        backdropUrl: details?.backdropUrl || paramPosterUrl || details?.posterUrl || '',
         releaseName: release.releaseName || release.filename,
         season: release.season,
         episode: release.episode,
@@ -302,6 +302,7 @@ export default function DetailsScreen() {
         mediaId,
         provider,
         posterUrl: paramPosterUrl || details?.posterUrl || '',
+        backdropUrl: details?.backdropUrl || paramPosterUrl || details?.posterUrl || '',
         releaseName: chosenRelease.releaseName || chosenRelease.filename,
         season: chosenRelease.season,
         episode: chosenRelease.episode,
@@ -334,7 +335,9 @@ export default function DetailsScreen() {
 
         <TouchableOpacity
           style={styles.floatingButton}
-          onPress={() =>
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          onPress={() => {
+            console.log(`[Details] 🔖 Bookmark tapped for mediaId: "${mediaId}" (current isFav: ${isFav})`);
             toggleFavorite({
               mediaId,
               provider,
@@ -342,8 +345,8 @@ export default function DetailsScreen() {
               mediaType: isSeries ? 'series' : 'movie',
               posterUrl: poster,
               year: paramYear,
-            })
-          }
+            });
+          }}
           activeOpacity={0.7}>
           <Ionicons
             name={isFav ? 'bookmark' : 'bookmark-outline'}
@@ -354,102 +357,110 @@ export default function DetailsScreen() {
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        {/* Backdrop Banner */}
-        <View style={styles.backdropContainer}>
-          {backdrop ? (
-            <Image source={{ uri: backdrop }} style={styles.backdropImage} resizeMode="cover" />
-          ) : (
-            <View style={styles.fallbackBackdrop} />
-          )}
-          <View style={styles.backdropOverlay} />
-        </View>
+        {/* Backdrop Banner with Official Autoplay Trailer (Full Brightness, 16:9 Cinematic) */}
+        <TrailerPlayer
+          ref={trailerRef}
+          title={cleanDisplayTitle(details?.title || paramTitle)}
+          year={paramYear || details?.year}
+          posterUrl={poster}
+          backdropUrl={backdrop}
+          height={Math.round(SCREEN_WIDTH * 0.5625)}
+          width={SCREEN_WIDTH}
+          borderRadius={0}
+          isActive={true}
+          autoPlayDelay={400}
+          showSoundToggle={true}
+        />
 
         {/* Content Body */}
         <View style={styles.contentBody}>
-          <View style={styles.posterAndMeta}>
-            {poster ? (
-              <Image source={{ uri: poster }} style={styles.posterImage} resizeMode="cover" />
-            ) : null}
-
-            <View style={styles.metaContainer}>
-              <View style={styles.providerTagRow}>
-                <ProviderBadge provider={provider} size="medium" />
-                {details?.imdbRating && (
-                  <View style={styles.ratingTag}>
-                    <Ionicons name="star" size={12} color="#fbbf24" />
-                    <Text style={styles.ratingText}>
-                      {Number(details.imdbRating).toFixed(1)}
-                    </Text>
-                  </View>
-                )}
-              </View>
-
-              <Text style={styles.title}>{displayTitle}</Text>
-
-              <View style={styles.infoMetaRow}>
-                {paramYear ? <Text style={styles.metaText}>{paramYear}</Text> : null}
-                {details?.duration ? (
-                  <Text style={styles.metaText}>{details.duration}</Text>
-                ) : null}
-                <Text style={styles.mediaTypeText}>
-                  {(isSeries ? 'SERIES' : 'MOVIE')}
+          {/* Metadata Top Row */}
+          <View style={styles.headerMetaRow}>
+            <ProviderBadge provider={provider} size="medium" />
+            {details?.imdbRating && (
+              <View style={styles.ratingTag}>
+                <Ionicons name="star" size={12} color="#fbbf24" />
+                <Text style={styles.ratingText}>
+                  {Number(details.imdbRating).toFixed(1)}
                 </Text>
               </View>
+            )}
+            {paramYear ? <Text style={styles.metaYearText}>{paramYear}</Text> : null}
+            {details?.duration ? (
+              <Text style={styles.metaYearText}>{details.duration}</Text>
+            ) : null}
+            <View style={styles.mediaTypePill}>
+              <Text style={styles.mediaTypeText}>
+                {isSeries ? 'SERIES' : 'MOVIE'}
+              </Text>
             </View>
           </View>
 
-          {/* Dynamic Quick Play / Resume Action Button */}
-          <TouchableOpacity
-            style={[
-              styles.quickPlayBtn,
-              isWatched && styles.watchedPlayBtn,
-              releases.length === 0 && styles.disabledBtn,
-            ]}
-            onPress={handleQuickPlay}
-            disabled={releases.length === 0 || resolvingRelease !== null}
-            activeOpacity={0.8}>
-            {resolvingRelease === 'quick_play' ? (
-              <ActivityIndicator color="#ffffff" size="small" />
-            ) : (
-              <View style={styles.quickPlayContent}>
-                <Ionicons
-                  name={isWatched ? 'checkmark-circle' : hasWatchProgress ? 'play-forward' : 'play'}
-                  size={20}
-                  color="#ffffff"
-                />
-                <Text style={styles.quickPlayText}>
-                  {isWatched
-                    ? 'Watched · Watch Again'
-                    : hasWatchProgress
-                    ? `Resume (at ${formatProgressTime(currentActiveProgress!.positionSeconds)})`
-                    : filteredReleases.length > 0
-                    ? `Play ${filteredReleases[0].quality}`
-                    : releases.length > 0
-                    ? `Play in ${releases[0].quality}`
-                    : 'Finding Streams...'}
-                </Text>
-              </View>
-            )}
-            {/* Progress bar line if resuming */}
-            {hasWatchProgress && currentActiveProgress && currentActiveProgress.durationSeconds > 0 && (
-              <View style={styles.buttonProgressBarBg}>
-                <View
-                  style={[
-                    styles.buttonProgressBarFill,
-                    {
-                      width: `${Math.min(
-                        100,
-                        Math.max(
-                          5,
-                          (currentActiveProgress.positionSeconds / currentActiveProgress.durationSeconds) * 100
-                        )
-                      )}%`,
-                    },
-                  ]}
-                />
-              </View>
-            )}
-          </TouchableOpacity>
+          {/* Cinematic Title */}
+          <Text style={styles.title}>{displayTitle}</Text>
+
+          {/* Action Row: Quick Play & Watch Trailer */}
+          <View style={styles.actionRowContainer}>
+            <TouchableOpacity
+              style={[
+                styles.quickPlayBtn,
+                isWatched && styles.watchedPlayBtn,
+                releases.length === 0 && styles.disabledBtn,
+              ]}
+              onPress={handleQuickPlay}
+              disabled={releases.length === 0 || resolvingRelease !== null}
+              activeOpacity={0.8}>
+              {resolvingRelease === 'quick_play' ? (
+                <ActivityIndicator color="#ffffff" size="small" />
+              ) : (
+                <View style={styles.quickPlayContent}>
+                  <Ionicons
+                    name={isWatched ? 'checkmark-circle' : hasWatchProgress ? 'play-forward' : 'play'}
+                    size={20}
+                    color="#ffffff"
+                  />
+                  <Text style={styles.quickPlayText}>
+                    {isWatched
+                      ? 'Watched · Watch Again'
+                      : hasWatchProgress
+                      ? `Resume (${formatProgressTime(currentActiveProgress!.positionSeconds)})`
+                      : filteredReleases.length > 0
+                      ? `Play ${filteredReleases[0].quality}`
+                      : releases.length > 0
+                      ? `Play in ${releases[0].quality}`
+                      : 'Finding Streams...'}
+                  </Text>
+                </View>
+              )}
+              {/* Progress bar line if resuming */}
+              {hasWatchProgress && currentActiveProgress && currentActiveProgress.durationSeconds > 0 && (
+                <View style={styles.buttonProgressBarBg}>
+                  <View
+                    style={[
+                      styles.buttonProgressBarFill,
+                      {
+                        width: `${Math.min(
+                          100,
+                          Math.max(
+                            5,
+                            (currentActiveProgress.positionSeconds / currentActiveProgress.durationSeconds) * 100
+                          )
+                        )}%`,
+                      },
+                    ]}
+                  />
+                </View>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.trailerActionBtn}
+              onPress={() => trailerRef.current?.openFullscreen()}
+              activeOpacity={0.75}>
+              <Ionicons name="film-outline" size={18} color="#ffffff" />
+              <Text style={styles.trailerActionText}>Trailer</Text>
+            </TouchableOpacity>
+          </View>
 
           {/* Overview */}
           {details?.description ? (
@@ -458,35 +469,6 @@ export default function DetailsScreen() {
               <Text style={styles.synopsisText}>{details.description}</Text>
             </View>
           ) : null}
-
-          {/* Dubbed Audio Languages (MovieBox) */}
-          {details?.dubs && details.dubs.length > 0 && (
-            <View style={styles.dubsContainer}>
-              <Text style={styles.sectionHeader}>AVAILABLE DUBBED AUDIO</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.dubsScroll}>
-                {details.dubs.map((dub) => (
-                  <TouchableOpacity
-                    key={dub.subjectId}
-                    style={styles.dubChip}
-                    onPress={() => {
-                      router.replace({
-                        pathname: '/details',
-                        params: {
-                          provider: 'moviebox',
-                          id: dub.subjectId,
-                          title: `${paramTitle} (${dub.language})`,
-                          posterUrl: paramPosterUrl,
-                          mediaType: paramMediaType,
-                        },
-                      });
-                    }}>
-                    <Ionicons name="volume-medium" size={14} color="#10b981" />
-                    <Text style={styles.dubText}>{dub.label}</Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            </View>
-          )}
 
           {/* Series Organization & Filters */}
           <View style={styles.releasesContainer}>
@@ -680,6 +662,11 @@ export default function DetailsScreen() {
                       {rel.size && <Text style={styles.releaseSize}>{rel.size}</Text>}
                     </View>
 
+                    {/* Technical Print Feature Chips (IMAX, REMUX, 4K UHD, HDR, Audio) */}
+                    <View style={styles.releaseFeatureRow}>
+                      <ReleaseBadgeRow releaseName={rel.releaseName || rel.filename} maxTags={5} />
+                    </View>
+
                     <Text numberOfLines={2} style={styles.releaseFilename}>
                       {rel.filename}
                     </Text>
@@ -768,31 +755,14 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(10, 10, 15, 0.65)',
   },
   contentBody: {
-    marginTop: -80,
     paddingHorizontal: 16,
+    paddingTop: 14,
   },
-  posterAndMeta: {
-    flexDirection: 'row',
-    gap: 16,
-    marginBottom: 16,
-  },
-  posterImage: {
-    width: 110,
-    height: 165,
-    borderRadius: 8,
-    backgroundColor: '#1e1e2c',
-    borderWidth: 1,
-    borderColor: '#2e2e42',
-  },
-  metaContainer: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    gap: 6,
-  },
-  providerTagRow: {
+  headerMetaRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    marginBottom: 8,
   },
   ratingTag: {
     flexDirection: 'row',
@@ -808,34 +778,62 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
   },
-  title: {
-    color: '#ffffff',
-    fontSize: 20,
-    fontWeight: '800',
-    lineHeight: 24,
-  },
-  infoMetaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  metaText: {
-    color: '#8e8e9e',
+  metaYearText: {
+    color: '#94a3b8',
     fontSize: 12,
+    fontWeight: '600',
+  },
+  mediaTypePill: {
+    backgroundColor: 'rgba(229, 9, 20, 0.12)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(229, 9, 20, 0.3)',
   },
   mediaTypeText: {
     color: '#e50914',
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '800',
     letterSpacing: 0.5,
   },
+  title: {
+    color: '#ffffff',
+    fontSize: 22,
+    fontWeight: '800',
+    lineHeight: 28,
+    marginBottom: 14,
+  },
+  actionRowContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 20,
+  },
   quickPlayBtn: {
+    flex: 1,
     backgroundColor: '#e50914',
     paddingVertical: 14,
     borderRadius: 8,
-    marginBottom: 20,
     overflow: 'hidden',
     position: 'relative',
+  },
+  trailerActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#1b1b28',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+  },
+  trailerActionText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '700',
   },
   quickPlayContent: {
     flexDirection: 'row',
@@ -1050,6 +1048,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 6,
+  },
+  releaseFeatureRow: {
+    marginBottom: 8,
   },
   releaseBadges: {
     flexDirection: 'row',

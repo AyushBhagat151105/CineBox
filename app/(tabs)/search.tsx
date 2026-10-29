@@ -133,21 +133,6 @@ export default function SearchScreen() {
               4KHDHub (2160p)
             </Text>
           </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.filterChip,
-              selectedProvider === 'moviebox' && styles.filterChipActiveMb,
-            ]}
-            onPress={() => setSelectedProvider('moviebox')}>
-            <Text
-              style={[
-                styles.filterText,
-                selectedProvider === 'moviebox' && styles.filterTextMb,
-              ]}>
-              MovieBox (Global)
-            </Text>
-          </TouchableOpacity>
         </ScrollView>
       </View>
 

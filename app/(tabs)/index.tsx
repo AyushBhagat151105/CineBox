@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -16,210 +16,346 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { aggregator } from '@/providers';
 import { CatalogItem, WatchHistoryItem } from '@/types';
-import { MovieCard, ContinueWatchingCard, ProviderBadge } from '@/components';
+import { MovieCard, ContinueWatchingCard, ProviderBadge, TrailerPlayer } from '@/components';
 import { useAppStore } from '@/store';
 import { cleanMovieTitle, cleanDisplayTitle } from '@/utils';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const CARD_SPACING = 8;
+const HORIZONTAL_PADDING = 12;
+const CARD_WIDTH = Math.floor((SCREEN_WIDTH - (HORIZONTAL_PADDING * 2) - (CARD_SPACING * 2)) / 3);
+
+export type HomeCategory =
+  | 'all'
+  | 'movies'
+  | 'series'
+  | '4k'
+  | 'bollywood'
+  | 'trending';
+
+export type GenreFilter =
+  | 'all'
+  | 'action'
+  | 'scifi'
+  | 'thriller'
+  | 'comedy'
+  | 'drama'
+  | 'horror'
+  | 'anime';
+
+interface CategoryOption {
+  id: HomeCategory;
+  label: string;
+  icon: keyof typeof Ionicons.glyphMap;
+}
+
+const CATEGORIES: CategoryOption[] = [
+  { id: 'all', label: 'All', icon: 'flame' },
+  { id: 'movies', label: 'Movies', icon: 'film' },
+  { id: 'series', label: 'Web Series', icon: 'tv' },
+  { id: '4k', label: '4K IMAX', icon: 'diamond' },
+  { id: 'bollywood', label: 'Bollywood', icon: 'globe' },
+  { id: 'trending', label: 'Global Hits', icon: 'trending-up' },
+];
+
+const GENRES: { id: GenreFilter; label: string }[] = [
+  { id: 'all', label: 'All Genres' },
+  { id: 'action', label: 'Action' },
+  { id: 'scifi', label: 'Sci-Fi' },
+  { id: 'thriller', label: 'Thriller' },
+  { id: 'comedy', label: 'Comedy' },
+  { id: 'drama', label: 'Drama' },
+  { id: 'horror', label: 'Horror' },
+  { id: 'anime', label: 'Anime' },
+];
 
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const watchHistory = useAppStore((s) => s.watchHistory);
 
+  const flatListRef = useRef<FlatList>(null);
+
+  // Filter States
+  const [selectedCategory, setSelectedCategory] = useState<HomeCategory>('all');
+  const [selectedGenre, setSelectedGenre] = useState<GenreFilter>('all');
+
+  // Content & Pagination States
+  const [catalogItems, setCatalogItems] = useState<CatalogItem[]>([]);
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+
+  // Spotlight & Curated Row Items (Mode A)
   const [featuredItem, setFeaturedItem] = useState<CatalogItem | null>(null);
-  const [bollywoodItems, setBollywoodItems] = useState<CatalogItem[]>([]);
-  const [fourkItems, setFourkItems] = useState<CatalogItem[]>([]);
-  const [trendingItems, setTrendingItems] = useState<CatalogItem[]>([]);
+  const [curated4k, setCurated4k] = useState<CatalogItem[]>([]);
+  const [curatedBollywood, setCuratedBollywood] = useState<CatalogItem[]>([]);
 
-  const fetchContent = useCallback(async () => {
-    try {
-      const hdhub = aggregator.getProvider('hdhub4u');
-      const fourk = aggregator.getProvider('fourkhdhub');
-      const mb = aggregator.getProvider('moviebox');
-
-      const [bollyRes, fourkRes, mbRes] = await Promise.allSettled([
-        hdhub ? hdhub.search('2026') : Promise.resolve([]),
-        fourk ? fourk.search('2026') : Promise.resolve([]),
-        mb ? mb.search('2026') : Promise.resolve([]),
-      ]);
-
-      let bolly = bollyRes.status === 'fulfilled' ? bollyRes.value : [];
-      let f4k = fourkRes.status === 'fulfilled' ? fourkRes.value : [];
-      let mbData = mbRes.status === 'fulfilled' ? mbRes.value : [];
-
-      // Fallback to 2025 if 2026 has limited results
-      if (bolly.length < 5 && hdhub) {
-        const fallbackBolly = await hdhub.search('2025');
-        bolly = [...bolly, ...fallbackBolly];
-      }
-      if (f4k.length < 5 && fourk) {
-        const fallback4k = await fourk.search('4k');
-        f4k = [...f4k, ...fallback4k];
+  // 1. Initial / Category Switch Load
+  const loadCategoryFeed = useCallback(
+    async (category: HomeCategory, genre: GenreFilter, pageNum = 1) => {
+      if (pageNum === 1) {
+        setLoading(true);
+      } else {
+        setLoadingMore(true);
       }
 
-      setBollywoodItems(bolly);
-      setFourkItems(f4k);
-      setTrendingItems(mbData);
+      try {
+        const targetGenre = genre === 'all' ? undefined : genre;
+        const newItems = await aggregator.browseCategory(category, pageNum, targetGenre);
 
-      // Select high quality featured item
-      if (f4k.length > 0 && f4k[0].posterUrl) {
-        setFeaturedItem(f4k[0]);
-      } else if (bolly.length > 0) {
-        setFeaturedItem(bolly[0]);
-      } else if (mbData.length > 0) {
-        setFeaturedItem(mbData[0]);
+        if (pageNum === 1) {
+          setCatalogItems(newItems);
+          setHasMore(newItems.length >= 8);
+
+          // In "All" mode, setup Spotlight and curated rows on initial load
+          if (category === 'all' && genre === 'all') {
+            if (newItems.length > 0) {
+              setFeaturedItem(newItems[0]);
+            }
+            // Fetch initial 4K and Bollywood highlights for horizontal preview
+            const fourkProvider = aggregator.getProvider('fourkhdhub');
+            const hdhubProvider = aggregator.getProvider('hdhub4u');
+
+            if (fourkProvider) {
+              fourkProvider.search('4k', 1).then((res) => setCurated4k(res.slice(0, 10))).catch(() => {});
+            }
+            if (hdhubProvider) {
+              hdhubProvider.search('2026', 1).then((res) => setCuratedBollywood(res.slice(0, 10))).catch(() => {});
+            }
+          }
+        } else {
+          setCatalogItems((prev) => {
+            const existingIds = new Set(prev.map((i) => `${i.id.provider}_${i.id.value}`));
+            const filteredNew = newItems.filter((i) => !existingIds.has(`${i.id.provider}_${i.id.value}`));
+            return [...prev, ...filteredNew];
+          });
+          setHasMore(newItems.length > 0);
+        }
+      } catch (err) {
+        console.warn(`[HomeScreen] Failed loading feed for ${category}:`, err);
+      } finally {
+        setLoading(false);
+        setLoadingMore(false);
+        setRefreshing(false);
       }
-    } catch (err) {
-      console.warn('Failed loading dashboard:', err);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchContent();
-  }, [fetchContent]);
-
-  const onRefresh = () => {
-    setRefreshing(true);
-    fetchContent();
-  };
-
-  const renderMovieCard = useCallback(
-    ({ item }: { item: CatalogItem }) => <MovieCard item={item} />,
+    },
     []
   );
 
-  const movieKeyExtractor = useCallback(
+  // Category / Genre Change Effect
+  useEffect(() => {
+    setPage(1);
+    setHasMore(true);
+    flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
+    loadCategoryFeed(selectedCategory, selectedGenre, 1);
+  }, [selectedCategory, selectedGenre, loadCategoryFeed]);
+
+  // Infinite Scroll Pagination Handler
+  const handleEndReached = useCallback(() => {
+    if (loading || loadingMore || !hasMore) return;
+    const nextPage = page + 1;
+    setPage(nextPage);
+    loadCategoryFeed(selectedCategory, selectedGenre, nextPage);
+  }, [loading, loadingMore, hasMore, page, selectedCategory, selectedGenre, loadCategoryFeed]);
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    setPage(1);
+    setHasMore(true);
+    loadCategoryFeed(selectedCategory, selectedGenre, 1);
+  }, [selectedCategory, selectedGenre, loadCategoryFeed]);
+
+  // Card Key Extractor
+  const keyExtractor = useCallback(
     (item: CatalogItem) => `${item.id.provider}_${item.id.value}`,
     []
   );
 
-  const renderContinueWatching = useCallback(
-    ({ item }: { item: WatchHistoryItem }) => <ContinueWatchingCard item={item} />,
-    []
-  );
-
+  // Continue Watching Key Extractor
   const continueWatchingKeyExtractor = useCallback(
     (item: WatchHistoryItem) => `${item.mediaId}_${item.season ?? 0}_${item.episode ?? 0}`,
     []
   );
 
-  return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
-      {/* Top Header */}
-      <View style={styles.header}>
-        <View style={styles.brandRow}>
-          <Ionicons name="film" size={26} color="#e50914" />
-          <Text style={styles.brandTitle}>CINE<Text style={styles.brandAccent}>BOX</Text></Text>
-        </View>
-
-        <View style={styles.headerRight}>
-          <TouchableOpacity
-            style={styles.searchButton}
-            onPress={() => router.push('/(tabs)/search')}
-            activeOpacity={0.7}>
-            <Ionicons name="search" size={20} color="#ffffff" />
-          </TouchableOpacity>
-        </View>
+  // Render Movie Card in Grid
+  const renderGridItem = useCallback(
+    ({ item }: { item: CatalogItem }) => (
+      <View style={{ width: CARD_WIDTH }}>
+        <MovieCard item={item} width={CARD_WIDTH} />
       </View>
+    ),
+    []
+  );
 
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor="#e50914"
-            colors={['#e50914']}
-          />
-        }>
-        {/* Continue Watching Section */}
-        {watchHistory.length > 0 && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <View style={styles.sectionTitleRow}>
-                <Ionicons name="play-circle" size={18} color="#e50914" />
-                <Text style={styles.sectionTitle}>Continue Watching</Text>
-              </View>
-            </View>
+  // Header Sub-Component
+  const renderHeader = useMemo(() => {
+    const isDefaultAll = selectedCategory === 'all' && selectedGenre === 'all';
 
-            <FlatList
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.horizontalList}
-              data={watchHistory}
-              renderItem={renderContinueWatching}
-              keyExtractor={continueWatchingKeyExtractor}
-              initialNumToRender={3}
-              maxToRenderPerBatch={3}
-              windowSize={3}
-              removeClippedSubviews
-            />
-          </View>
-        )}
+    return (
+      <View style={styles.headerContainer}>
+        {/* Category Selector Pills */}
+        <View style={styles.categoriesSection}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.pillsScroll}>
+            {CATEGORIES.map((cat) => {
+              const active = selectedCategory === cat.id;
+              return (
+                <TouchableOpacity
+                  key={cat.id}
+                  style={[styles.categoryPill, active && styles.categoryPillActive]}
+                  onPress={() => setSelectedCategory(cat.id)}
+                  activeOpacity={0.75}>
+                  <Ionicons
+                    name={cat.icon}
+                    size={14}
+                    color={active ? '#ffffff' : '#94a3b8'}
+                    style={{ marginRight: 5 }}
+                  />
+                  <Text style={[styles.categoryPillText, active && styles.categoryPillTextActive]}>
+                    {cat.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
 
-        {/* Hero Featured Banner */}
-        {featuredItem && (
-          <TouchableOpacity
-            activeOpacity={0.9}
-            style={styles.heroBanner}
-            onPress={() =>
-              router.push({
-                pathname: '/details',
-                params: {
-                  provider: featuredItem.id.provider,
-                  id: featuredItem.id.value,
-                  title: cleanMovieTitle(featuredItem.title),
-                  posterUrl: featuredItem.posterUrl || '',
-                  mediaType: featuredItem.mediaType,
-                },
-              })
-            }>
-            {featuredItem.posterUrl ? (
-              <Image
-                source={{ uri: featuredItem.posterUrl }}
-                style={styles.heroImage}
-                resizeMode="cover"
-              />
-            ) : null}
+        {/* Secondary Genre Sub-Filters */}
+        <View style={styles.genresSection}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.pillsScroll}>
+            {GENRES.map((g) => {
+              const active = selectedGenre === g.id;
+              return (
+                <TouchableOpacity
+                  key={g.id}
+                  style={[styles.genreChip, active && styles.genreChipActive]}
+                  onPress={() => setSelectedGenre(g.id)}
+                  activeOpacity={0.75}>
+                  <Text style={[styles.genreChipText, active && styles.genreChipTextActive]}>
+                    {g.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
 
-            <View style={styles.heroOverlay}>
-              <View style={styles.heroBadges}>
-                <ProviderBadge provider={featuredItem.id.provider} size="medium" />
-                <View style={styles.heroFeaturedBadge}>
-                  <Text style={styles.heroFeaturedText}>FEATURED</Text>
-                </View>
-              </View>
-
-              <Text numberOfLines={2} style={styles.heroTitle}>
-                {cleanMovieTitle(featuredItem.title)}
-              </Text>
-
-              <View style={styles.heroActionRow}>
-                <View style={styles.heroPlayButton}>
-                  <Ionicons name="play" size={18} color="#000000" />
-                  <Text style={styles.heroPlayText}>Watch Now</Text>
-                </View>
-              </View>
-            </View>
-          </TouchableOpacity>
-        )}
-
-        {loading ? (
-          <View style={styles.loaderContainer}>
-            <ActivityIndicator size="large" color="#e50914" />
-            <Text style={styles.loaderText}>Aggregating HDHub4u, 4KHDHub & MovieBox...</Text>
-          </View>
-        ) : (
+        {/* MODE A ONLY: Continue Watching, Hero Spotlight, and Curated Carousels */}
+        {isDefaultAll && (
           <>
-            {/* Bollywood & Dual Audio (HDHub4u) */}
-            {bollywoodItems.length > 0 && (
+            {/* 1. Continue Watching Section */}
+            {watchHistory.length > 0 && (
+              <View style={styles.section}>
+                <View style={styles.sectionHeader}>
+                  <View style={styles.sectionTitleRow}>
+                    <Ionicons name="play-circle" size={18} color="#e50914" />
+                    <Text style={styles.sectionTitle}>Continue Watching</Text>
+                  </View>
+                </View>
+
+                <FlatList
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.horizontalList}
+                  data={watchHistory}
+                  renderItem={({ item }) => <ContinueWatchingCard item={item} />}
+                  keyExtractor={continueWatchingKeyExtractor}
+                  initialNumToRender={3}
+                  maxToRenderPerBatch={3}
+                  windowSize={3}
+                  removeClippedSubviews
+                />
+              </View>
+            )}
+
+            {/* 2. Hero Spotlight Banner with Autoplay Trailer */}
+            {featuredItem && (
+              <View style={styles.heroBannerContainer}>
+                <TrailerPlayer
+                  title={cleanMovieTitle(featuredItem.title)}
+                  year={featuredItem.year}
+                  posterUrl={featuredItem.posterUrl}
+                  backdropUrl={featuredItem.backdropUrl || featuredItem.posterUrl}
+                  height={230}
+                  width={SCREEN_WIDTH - 24}
+                  borderRadius={12}
+                  isActive={true}
+                  autoPlayDelay={1500}
+                  showSoundToggle={true}>
+                  <TouchableOpacity
+                    activeOpacity={0.92}
+                    style={styles.heroBannerTouch}
+                    onPress={() =>
+                      router.push({
+                        pathname: '/details',
+                        params: {
+                          provider: featuredItem.id.provider,
+                          id: featuredItem.id.value,
+                          title: cleanMovieTitle(featuredItem.title),
+                          posterUrl: featuredItem.posterUrl || '',
+                          mediaType: featuredItem.mediaType,
+                        },
+                      })
+                    }>
+                    <View style={styles.heroOverlay}>
+                      <View style={styles.heroBadges}>
+                        <ProviderBadge provider={featuredItem.id.provider} size="medium" />
+                        <View style={styles.heroFeaturedBadge}>
+                          <Text style={styles.heroFeaturedText}>SPOTLIGHT</Text>
+                        </View>
+                        {featuredItem.rating && (
+                          <View style={styles.heroRatingBadge}>
+                            <Ionicons name="star" size={11} color="#fbbf24" />
+                            <Text style={styles.heroRatingText}>{Number(featuredItem.rating).toFixed(1)}</Text>
+                          </View>
+                        )}
+                      </View>
+
+                      <Text numberOfLines={2} style={styles.heroTitle}>
+                        {cleanMovieTitle(featuredItem.title)}
+                      </Text>
+
+                      <View style={styles.heroActionRow}>
+                        <View style={styles.heroPlayButton}>
+                          <Ionicons name="play" size={17} color="#000000" />
+                          <Text style={styles.heroPlayText}>Watch Now</Text>
+                        </View>
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+                </TrailerPlayer>
+              </View>
+            )}
+
+            {/* 3. 4K Ultra HD & IMAX Carousel */}
+            {curated4k.length > 0 && (
+              <View style={styles.section}>
+                <View style={styles.sectionHeader}>
+                  <View style={styles.sectionTitleRow}>
+                    <Text style={styles.sectionTitle}>4K Ultra HD & IMAX Master Prints</Text>
+                    <ProviderBadge provider="fourkhdhub" size="small" />
+                  </View>
+                </View>
+
+                <FlatList
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.horizontalList}
+                  data={curated4k}
+                  renderItem={({ item }) => <MovieCard item={item} />}
+                  keyExtractor={keyExtractor}
+                  initialNumToRender={4}
+                  maxToRenderPerBatch={4}
+                  windowSize={3}
+                  removeClippedSubviews
+                />
+              </View>
+            )}
+
+            {/* 4. Bollywood & Dual Audio Carousel */}
+            {curatedBollywood.length > 0 && (
               <View style={styles.section}>
                 <View style={styles.sectionHeader}>
                   <View style={styles.sectionTitleRow}>
@@ -232,59 +368,9 @@ export default function HomeScreen() {
                   horizontal
                   showsHorizontalScrollIndicator={false}
                   contentContainerStyle={styles.horizontalList}
-                  data={bollywoodItems}
-                  renderItem={renderMovieCard}
-                  keyExtractor={movieKeyExtractor}
-                  initialNumToRender={4}
-                  maxToRenderPerBatch={4}
-                  windowSize={3}
-                  removeClippedSubviews
-                />
-              </View>
-            )}
-
-            {/* 4K UHD Master Quality (4KHDHub) */}
-            {fourkItems.length > 0 && (
-              <View style={styles.section}>
-                <View style={styles.sectionHeader}>
-                  <View style={styles.sectionTitleRow}>
-                    <Text style={styles.sectionTitle}>4K Ultra HD & Remux</Text>
-                    <ProviderBadge provider="fourkhdhub" size="small" />
-                  </View>
-                </View>
-
-                <FlatList
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.horizontalList}
-                  data={fourkItems}
-                  renderItem={renderMovieCard}
-                  keyExtractor={movieKeyExtractor}
-                  initialNumToRender={4}
-                  maxToRenderPerBatch={4}
-                  windowSize={3}
-                  removeClippedSubviews
-                />
-              </View>
-            )}
-
-            {/* Global Hits & Series (MovieBox) */}
-            {trendingItems.length > 0 && (
-              <View style={styles.section}>
-                <View style={styles.sectionHeader}>
-                  <View style={styles.sectionTitleRow}>
-                    <Text style={styles.sectionTitle}>MovieBox Worldwide Hits</Text>
-                    <ProviderBadge provider="moviebox" size="small" />
-                  </View>
-                </View>
-
-                <FlatList
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.horizontalList}
-                  data={trendingItems}
-                  renderItem={renderMovieCard}
-                  keyExtractor={movieKeyExtractor}
+                  data={curatedBollywood}
+                  renderItem={({ item }) => <MovieCard item={item} />}
+                  keyExtractor={keyExtractor}
                   initialNumToRender={4}
                   maxToRenderPerBatch={4}
                   windowSize={3}
@@ -294,7 +380,119 @@ export default function HomeScreen() {
             )}
           </>
         )}
-      </ScrollView>
+
+        {/* Section Title for the Infinite Grid */}
+        <View style={styles.gridHeaderRow}>
+          <View style={styles.gridHeaderLeft}>
+            <Ionicons
+              name={
+                selectedCategory === 'series'
+                  ? 'tv-outline'
+                  : selectedCategory === '4k'
+                  ? 'diamond-outline'
+                  : 'film-outline'
+              }
+              size={18}
+              color="#e50914"
+            />
+            <Text style={styles.gridHeaderTitle}>
+              {selectedCategory === 'all'
+                ? 'EXPLORE ALL RELEASES'
+                : `${CATEGORIES.find((c) => c.id === selectedCategory)?.label.toUpperCase()} CATALOG`}
+            </Text>
+          </View>
+          <Text style={styles.gridHeaderCount}>{catalogItems.length} Titles Loaded</Text>
+        </View>
+      </View>
+    );
+  }, [
+    selectedCategory,
+    selectedGenre,
+    watchHistory,
+    featuredItem,
+    curated4k,
+    curatedBollywood,
+    catalogItems.length,
+    continueWatchingKeyExtractor,
+    keyExtractor,
+    router,
+  ]);
+
+  // Footer Component for Infinite Scroll Loading Spinner
+  const renderFooter = useMemo(() => {
+    if (loadingMore) {
+      return (
+        <View style={styles.footerLoader}>
+          <ActivityIndicator size="small" color="#e50914" />
+          <Text style={styles.footerLoaderText}>Loading more movies & series...</Text>
+        </View>
+      );
+    }
+    if (!hasMore && catalogItems.length > 0) {
+      return (
+        <View style={styles.footerEnd}>
+          <Text style={styles.footerEndText}>You have reached the end of the catalog</Text>
+        </View>
+      );
+    }
+    return undefined;
+  }, [loadingMore, hasMore, catalogItems.length]);
+
+  return (
+    <View style={[styles.container, { paddingTop: insets.top }]}>
+      {/* Top Header */}
+      <View style={styles.header}>
+        <View style={styles.brandRow}>
+          <Ionicons name="film" size={26} color="#e50914" />
+          <Text style={styles.brandTitle}>
+            CINE<Text style={styles.brandAccent}>BOX</Text>
+          </Text>
+        </View>
+
+        <View style={styles.headerRight}>
+          <TouchableOpacity
+            style={styles.searchButton}
+            onPress={() => router.push('/(tabs)/search')}
+            activeOpacity={0.7}>
+            <Ionicons name="search" size={20} color="#ffffff" />
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* Main Infinite Scroll Virtualized Grid */}
+      {loading ? (
+        <View style={styles.mainLoaderContainer}>
+          <ActivityIndicator size="large" color="#e50914" />
+          <Text style={styles.loaderText}>Aggregating HDHub4u & 4KHDHub...</Text>
+        </View>
+      ) : (
+        <FlatList
+          ref={flatListRef}
+          data={catalogItems}
+          keyExtractor={keyExtractor}
+          renderItem={renderGridItem}
+          numColumns={3}
+          columnWrapperStyle={styles.columnWrapper}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+          ListHeaderComponent={renderHeader}
+          ListFooterComponent={renderFooter}
+          onEndReached={handleEndReached}
+          onEndReachedThreshold={0.5}
+          initialNumToRender={9}
+          maxToRenderPerBatch={9}
+          windowSize={5}
+          removeClippedSubviews
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor="#e50914"
+              colors={['#e50914']}
+            />
+          }
+        />
+      )}
     </View>
   );
 }
@@ -340,78 +538,81 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  scrollContent: {
-    paddingBottom: 40,
+  headerContainer: {
+    paddingBottom: 8,
   },
-  heroBanner: {
-    width: SCREEN_WIDTH - 24,
-    height: 240,
-    marginHorizontal: 12,
-    marginTop: 12,
-    marginBottom: 20,
-    borderRadius: 14,
-    overflow: 'hidden',
-    backgroundColor: '#141420',
-    position: 'relative',
+  categoriesSection: {
+    paddingTop: 10,
+    paddingBottom: 6,
   },
-  heroImage: {
-    width: '100%',
-    height: '100%',
+  genresSection: {
+    paddingBottom: 10,
   },
-  heroOverlay: {
-    ...StyleSheet.absoluteFill,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'flex-end',
-    padding: 16,
-  },
-  heroBadges: {
-    flexDirection: 'row',
+  pillsScroll: {
+    paddingHorizontal: 12,
     gap: 8,
-    marginBottom: 8,
   },
-  heroFeaturedBadge: {
-    backgroundColor: '#e50914',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  heroFeaturedText: {
-    color: '#ffffff',
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-  },
-  heroTitle: {
-    color: '#ffffff',
-    fontSize: 20,
-    fontWeight: '800',
-    marginBottom: 12,
-    textShadowColor: 'rgba(0,0,0,0.8)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4,
-  },
-  heroActionRow: {
+  categoryPill: {
     flexDirection: 'row',
     alignItems: 'center',
-  },
-  heroPlayButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#ffffff',
-    paddingHorizontal: 16,
+    backgroundColor: '#14141e',
+    paddingHorizontal: 14,
     paddingVertical: 8,
-    borderRadius: 6,
-    gap: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#222232',
   },
-  heroPlayText: {
-    color: '#000000',
+  categoryPillActive: {
+    backgroundColor: '#e50914',
+    borderColor: '#e50914',
+  },
+  categoryPillText: {
+    color: '#94a3b8',
+    fontSize: 12.5,
+    fontWeight: '600',
+  },
+  categoryPillTextActive: {
+    color: '#ffffff',
+    fontWeight: '800',
+  },
+  genreChip: {
+    backgroundColor: '#12121a',
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#1d1d2b',
+  },
+  genreChipActive: {
+    backgroundColor: '#2563eb',
+    borderColor: '#3b82f6',
+  },
+  genreChipText: {
+    color: '#717182',
+    fontSize: 11.5,
+    fontWeight: '600',
+  },
+  genreChipTextActive: {
+    color: '#ffffff',
     fontWeight: '700',
-    fontSize: 13,
+  },
+  listContent: {
+    paddingBottom: 60,
+  },
+  columnWrapper: {
+    paddingHorizontal: HORIZONTAL_PADDING,
+    justifyContent: 'flex-start',
+    gap: CARD_SPACING,
+    marginBottom: 12,
   },
   section: {
-    marginBottom: 24,
+    marginTop: 12,
+    marginBottom: 16,
   },
   sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: 16,
     marginBottom: 12,
   },
@@ -422,21 +623,142 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     color: '#ffffff',
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: '700',
     letterSpacing: 0.3,
   },
   horizontalList: {
     paddingHorizontal: 16,
   },
-  loaderContainer: {
-    paddingVertical: 60,
+  heroBannerContainer: {
+    marginHorizontal: 12,
+    marginTop: 6,
+    marginBottom: 18,
+    borderRadius: 12,
+    overflow: 'hidden',
+    backgroundColor: '#14141e',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  heroBannerTouch: {
+    ...StyleSheet.absoluteFill,
+    justifyContent: 'flex-end',
+  },
+  heroOverlay: {
+    padding: 16,
+    backgroundColor: 'rgba(10, 10, 15, 0.78)',
+  },
+  heroBadges: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  heroFeaturedBadge: {
+    backgroundColor: '#e50914',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  heroFeaturedText: {
+    color: '#ffffff',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  heroRatingBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(251, 191, 36, 0.15)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  heroRatingText: {
+    color: '#fbbf24',
+    fontSize: 10.5,
+    fontWeight: '700',
+  },
+  heroTitle: {
+    color: '#ffffff',
+    fontSize: 18,
+    fontWeight: '800',
+    marginBottom: 12,
+    lineHeight: 22,
+  },
+  heroActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  heroPlayButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 18,
+    paddingVertical: 9,
+    borderRadius: 6,
+    gap: 6,
+  },
+  heroPlayText: {
+    color: '#000000',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  gridHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 10,
+  },
+  gridHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  gridHeaderTitle: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  gridHeaderCount: {
+    color: '#64748b',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  mainLoaderContainer: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     gap: 12,
   },
   loaderText: {
-    color: '#7a7a8c',
-    fontSize: 13,
+    color: '#777788',
+    fontSize: 12,
+  },
+  footerLoader: {
+    paddingVertical: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  footerLoaderText: {
+    color: '#94a3b8',
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  footerEnd: {
+    paddingVertical: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  footerEndText: {
+    color: '#475569',
+    fontSize: 11.5,
+    fontWeight: '600',
   },
 });

@@ -3,7 +3,6 @@ import {
   getActiveHDHub4uDomain,
   HDHub4uProvider,
   FourKHdHubProvider,
-  MovieBoxProvider,
 } from '@/providers';
 
 async function main() {
@@ -63,23 +62,8 @@ async function main() {
     console.error(`   ❌ 4KHDHub search error:`, err.message);
   }
 
-  // 4. MovieBox API Search (HMAC-MD5 Cryptographic Signing)
-  console.log('\n4️⃣ Testing MovieBox Provider ("Inception")...');
-  try {
-    const mb = new MovieBoxProvider();
-    const results = await mb.search('Inception');
-    console.log(`   ✅ Found ${results.length} results on MovieBox`);
-    if (results.length > 0) {
-      console.log(`   🎬 Top match: "${results[0].title}" (${results[0].year || 'N/A'})`);
-      console.log(`   🔗 ID: ${results[0].id.value}`);
-      console.log(`   ⭐ Rating: ${results[0].rating || 'N/A'}`);
-    }
-  } catch (err: any) {
-    console.error(`   ❌ MovieBox search error:`, err.message);
-  }
-
-  // 5. Aggregator Federated Search & Deduplication
-  console.log('\n5️⃣ Testing Aggregator Federated Search ("Interstellar")...');
+  // 4. Aggregator Federated Search & Deduplication
+  console.log('\n4️⃣ Testing Aggregator Federated Search ("Interstellar")...');
   try {
     const unified = await aggregator.searchAll('Interstellar');
     console.log(`   ✅ Aggregated and deduplicated: ${unified.length} distinct titles`);

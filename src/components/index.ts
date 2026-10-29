@@ -2,3 +2,5 @@ export * from './MovieCard';
 export * from './ContinueWatchingCard';
 export * from './ProviderBadge';
 export * from './QualityBadge';
+export * from './ReleaseBadgeRow';
+export * from './TrailerPlayer';

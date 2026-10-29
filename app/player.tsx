@@ -35,7 +35,7 @@ export default function PlayerScreen() {
         streamUrl: params.streamUrl,
         title,
         mediaId: params.mediaId || 'unknown',
-        provider: (params.provider as ProviderId) || 'moviebox',
+        provider: (params.provider as ProviderId) || 'hdhub4u',
         posterUrl: params.posterUrl,
         resumeSeconds: resumeSec,
         forceChooser: preferredPlayer === 'chooser',

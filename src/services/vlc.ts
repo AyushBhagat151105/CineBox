@@ -11,6 +11,7 @@ export interface VlcPlaybackOptions {
   provider: ProviderId;
   releaseName?: string;
   posterUrl?: string;
+  backdropUrl?: string;
   season?: number;
   episode?: number;
   resumeSeconds?: number;
@@ -28,6 +29,7 @@ interface ActiveVlcSession {
 class VlcService {
   private activeSession: ActiveVlcSession | null = null;
   private appStateSubscription: any = null;
+  private isHandlingReturn = false;
 
   constructor() {
     this.setupAppStateListener();
@@ -37,8 +39,14 @@ class VlcService {
     this.appStateSubscription = AppState.addEventListener(
       'change',
       (nextState: AppStateStatus) => {
-        if (nextState === 'active' && this.activeSession) {
-          this.handlePlaybackReturn();
+        if (nextState === 'active' && this.activeSession && !this.isHandlingReturn) {
+          // Allow startActivityAsync promise to resolve first with exact intent extras (400ms buffer)
+          setTimeout(() => {
+            if (this.activeSession && !this.isHandlingReturn) {
+              console.log('[VLC] 🔄 AppState active reconciliation (player closed or switched)');
+              this.handlePlaybackReturn();
+            }
+          }, 400);
         }
       }
     );
@@ -74,6 +82,7 @@ class VlcService {
       title: options.title,
       provider: options.provider,
       posterUrl: options.posterUrl,
+      backdropUrl: options.backdropUrl,
       releaseName: options.releaseName,
       season: options.season,
       episode: options.episode,
@@ -120,6 +129,7 @@ class VlcService {
         itemTitle: title,
         position: resumePositionMs,
         from_start: resumeSeconds <= 0,
+        return_result: true, // Requests exit position & duration in result extra
         extra_headers: ['User-Agent', userAgent],
         headers: ['User-Agent', userAgent],
       },
@@ -139,8 +149,9 @@ class VlcService {
     });
 
     try {
-      await IntentLauncher.startActivityAsync('android.intent.action.VIEW', intentParams);
-      console.log(`[VLC] ✅ Successfully dispatched Intent to ${intentParams.packageName || 'System Chooser'}`);
+      const result = await IntentLauncher.startActivityAsync('android.intent.action.VIEW', intentParams);
+      console.log(`[VLC] ✅ Player closed. Result code: ${result.resultCode}, extra:`, result.extra);
+      await this.handlePlaybackReturn(result.extra);
       return true;
     } catch (err: any) {
       console.warn(`[VLC] ⚠️ Direct launch of ${intentParams.packageName} failed (${err?.message}), falling back to chooser...`);
@@ -178,14 +189,16 @@ class VlcService {
             style: 'default',
             onPress: async () => {
               try {
-                await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
+                const result = await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
                   data: cleanUrl,
                   type: 'video/*',
                   extra: {
                     title,
                     position: Math.max(0, Math.floor(resumeSeconds * 1000)),
+                    return_result: true,
                   },
                 });
+                await this.handlePlaybackReturn(result.extra);
                 resolve(true);
               } catch (innerErr: any) {
                 Alert.alert('Playback Failed', 'No compatible video player found on device.');
@@ -204,37 +217,120 @@ class VlcService {
   }
 
   /**
-   * Called when user finishes watching and returns to CineBox
+   * Called when user finishes watching and returns to CineBox.
+   * Extracts exact position and duration returned by VLC (extra_position)
+   * or MX Player / Just Player (position, duration), falling back to elapsed time if needed.
    */
-  private async handlePlaybackReturn() {
-    if (!this.activeSession) return;
+  private async handlePlaybackReturn(resultExtra?: Record<string, any>) {
+    if (!this.activeSession || this.isHandlingReturn) return;
+    this.isHandlingReturn = true;
 
-    const { options, startTime, initialResume } = this.activeSession;
-    const elapsedSec = Math.round((Date.now() - startTime) / 1000);
-    console.log(`[VLC] 🔄 Returned from player session. Elapsed watch time: ${elapsedSec}s (initial resume: ${initialResume}s)`);
+    try {
+      const { options, startTime, initialResume } = this.activeSession;
+      const elapsedSec = Math.round((Date.now() - startTime) / 1000);
 
-    // Only update progress if user actually spent more than 15 seconds in the player
-    if (elapsedSec >= 15) {
-      const newPosition = initialResume + elapsedSec;
-      const duration = options.durationSeconds && options.durationSeconds > 0
-        ? options.durationSeconds
-        : Math.max(newPosition, 7200);
+      let exactPositionSec: number | null = null;
+      let exactDurationSec: number | null = null;
 
-      console.log(`[VLC] 💾 Saving watch progress: ${newPosition}s / ${duration}s for "${options.title}"`);
-      await useAppStore.getState().saveProgress({
-        mediaId: options.mediaId,
-        title: options.title,
-        provider: options.provider,
-        posterUrl: options.posterUrl,
-        releaseName: options.releaseName,
-        season: options.season,
-        episode: options.episode,
-        positionSeconds: Math.min(newPosition, duration),
-        durationSeconds: duration,
-      });
+      if (resultExtra) {
+        // VLC uses extra_position & extra_duration (long ms)
+        // MX Player & Just Player use position & duration (int ms)
+        const rawPos = resultExtra.extra_position ?? resultExtra.position;
+        const rawDur = resultExtra.extra_duration ?? resultExtra.duration;
+
+        if (rawPos !== undefined && rawPos !== null) {
+          const numPos = Number(rawPos);
+          if (!isNaN(numPos) && numPos > 0) {
+            exactPositionSec = Math.round(numPos / 1000);
+          }
+        }
+
+        if (rawDur !== undefined && rawDur !== null) {
+          const numDur = Number(rawDur);
+          if (!isNaN(numDur) && numDur > 0) {
+            exactDurationSec = Math.round(numDur / 1000);
+          }
+        }
+      }
+
+      const duration =
+        exactDurationSec && exactDurationSec > 0
+          ? exactDurationSec
+          : options.durationSeconds && options.durationSeconds > 0
+          ? options.durationSeconds
+          : 7200;
+
+      let finalPosition: number;
+      if (exactPositionSec !== null) {
+        console.log(`[VLC] 🎯 Exact position received from player extra: ${exactPositionSec}s / ${duration}s`);
+        finalPosition = exactPositionSec;
+      } else {
+        // Fallback to wall-clock if intent did not carry extra position
+        if (elapsedSec < 10) {
+          console.log(`[VLC] ⏱️ Quick return (${elapsedSec}s). Keeping position at ${initialResume}s`);
+          finalPosition = initialResume;
+        } else {
+          finalPosition = Math.min(initialResume + elapsedSec, duration);
+          console.log(`[VLC] ⏱️ Wall-clock fallback position: ${finalPosition}s / ${duration}s (elapsed: ${elapsedSec}s)`);
+        }
+      }
+
+      const isCompleted = duration > 0 && finalPosition / duration >= 0.9;
+
+      // Series Auto-Advance: If episode completed (≥90%), advance to the next episode
+      if (isCompleted && options.season !== undefined && options.episode !== undefined) {
+        const nextEp = options.episode + 1;
+        console.log(
+          `[VLC] 🏆 Episode completed (${finalPosition}s / ${duration}s). Auto-advancing Continue Watching to S${options.season}:E${nextEp}`
+        );
+
+        // 1. Mark current episode as completed in history
+        await useAppStore.getState().saveProgress({
+          mediaId: options.mediaId,
+          title: options.title,
+          provider: options.provider,
+          posterUrl: options.posterUrl,
+          backdropUrl: options.backdropUrl,
+          releaseName: options.releaseName,
+          season: options.season,
+          episode: options.episode,
+          positionSeconds: duration,
+          durationSeconds: duration,
+        });
+
+        // 2. Add next episode to Continue Watching at 0s so user can resume seamlessly
+        await useAppStore.getState().saveProgress({
+          mediaId: options.mediaId,
+          title: options.title,
+          provider: options.provider,
+          posterUrl: options.posterUrl,
+          backdropUrl: options.backdropUrl,
+          season: options.season,
+          episode: nextEp,
+          positionSeconds: 0,
+          durationSeconds: duration,
+        });
+      } else if (finalPosition > 10 || isCompleted) {
+        console.log(`[VLC] 💾 Saving watch progress: ${finalPosition}s / ${duration}s for "${options.title}"`);
+        await useAppStore.getState().saveProgress({
+          mediaId: options.mediaId,
+          title: options.title,
+          provider: options.provider,
+          posterUrl: options.posterUrl,
+          backdropUrl: options.backdropUrl,
+          releaseName: options.releaseName,
+          season: options.season,
+          episode: options.episode,
+          positionSeconds: Math.min(finalPosition, duration),
+          durationSeconds: duration,
+        });
+      }
+    } catch (err: any) {
+      console.warn(`[VLC] ⚠️ Error saving playback progress:`, err?.message);
+    } finally {
+      this.activeSession = null;
+      this.isHandlingReturn = false;
     }
-
-    this.activeSession = null;
   }
 }
 

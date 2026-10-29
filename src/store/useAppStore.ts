@@ -116,6 +116,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   toggleFavorite: async (item) => {
     const current = get().favorites;
     const exists = current.some((f) => f.mediaId === item.mediaId);
+    console.log(`[Store] 🔖 toggleFavorite for "${item.mediaId}". Exists: ${exists}, Count before: ${current.length}`);
 
     let newFavs: FavoriteItem[];
     if (exists) {
@@ -125,6 +126,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
 
     set({ favorites: newFavs });
+    console.log(`[Store] 🔖 Favorites updated, new count: ${newFavs.length}`);
     await AsyncStorage.setItem('@cinebox_favorites', JSON.stringify(newFavs));
   },
 

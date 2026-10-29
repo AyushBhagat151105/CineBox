@@ -23,12 +23,6 @@ const PROVIDER_CONFIG: Record<
     text: '#f59e0b',
     border: 'rgba(245, 158, 11, 0.4)',
   },
-  moviebox: {
-    label: 'MovieBox',
-    bg: 'rgba(239, 68, 68, 0.15)',
-    text: '#ef4444',
-    border: 'rgba(239, 68, 68, 0.4)',
-  },
   addons: {
     label: 'Stremio',
     bg: 'rgba(147, 51, 234, 0.15)',

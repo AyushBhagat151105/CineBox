@@ -25,14 +25,14 @@ export class HDHub4uProvider implements MediaProvider {
     timeout: 10000,
   });
 
-  async search(query: string): Promise<CatalogItem[]> {
+  async search(query: string, page = 1): Promise<CatalogItem[]> {
     const domain = await getActiveHDHub4uDomain();
 
-    // 1. First try HDHub4u's official Pingora fast search API
+    // 1. First try HDHub4u's official Pingora fast search API with pagination
     try {
       const pingoraUrl = `https://search.pingora.fyi/collections/post/documents/search?q=${encodeURIComponent(
         query
-      )}&query_by=post_title,category,stars,director,imdb_id&query_by_weights=4,2,2,2,4&sort_by=sort_by_date:desc&limit=24`;
+      )}&page=${page}&limit=24&query_by=post_title,category,stars,director,imdb_id&query_by_weights=4,2,2,2,4&sort_by=sort_by_date:desc`;
 
       const pRes = await this.client.get(pingoraUrl, {
         headers: { Referer: 'https://hdhub4u.fast/' },
@@ -74,7 +74,10 @@ export class HDHub4uProvider implements MediaProvider {
       // Fallback to domain search
     }
 
-    const searchUrl = `${domain}/?s=${encodeURIComponent(query)}`;
+    const searchUrl =
+      page > 1
+        ? `${domain}/page/${page}/?s=${encodeURIComponent(query)}`
+        : `${domain}/?s=${encodeURIComponent(query)}`;
 
     try {
       const res = await this.client.get(searchUrl);

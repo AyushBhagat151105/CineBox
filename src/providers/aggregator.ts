@@ -1,7 +1,6 @@
 import { MediaProvider } from './base';
 import { HDHub4uProvider } from './hdhub4u/client';
 import { FourKHdHubProvider } from './fourkhdhub/client';
-import { MovieBoxProvider } from './moviebox/client';
 import {
   CatalogItem,
   MediaDetails,
@@ -18,11 +17,9 @@ export class AggregatorService {
   constructor() {
     const hdhub = new HDHub4uProvider();
     const fourk = new FourKHdHubProvider();
-    const mb = new MovieBoxProvider();
 
     this.providers.set(hdhub.id, hdhub);
     this.providers.set(fourk.id, fourk);
-    this.providers.set(mb.id, mb);
   }
 
   getProvider(id: ProviderId): MediaProvider | undefined {
@@ -209,6 +206,85 @@ export class AggregatorService {
       .replace(/[^a-z0-9]/g, '')
       .trim();
     return year ? `${clean}_${year}` : clean;
+  }
+
+  // 5. Infinite Scroll Category Browser
+  async browseCategory(
+    category: 'all' | 'movies' | 'series' | '4k' | 'bollywood' | 'trending',
+    page = 1,
+    genre?: string
+  ): Promise<CatalogItem[]> {
+    const hdhub = this.providers.get('hdhub4u') as HDHub4uProvider;
+    const fourk = this.providers.get('fourkhdhub') as FourKHdHubProvider;
+
+    const queryTarget = genre && genre !== 'all' ? genre : '2026';
+    const promises: Promise<CatalogItem[]>[] = [];
+
+    switch (category) {
+      case 'all': {
+        if (fourk) promises.push(fourk.browse(page));
+        if (hdhub) promises.push(hdhub.search(queryTarget, page));
+        break;
+      }
+      case 'movies': {
+        if (fourk) {
+          promises.push(
+            fourk.browse(page).then((items) => items.filter((i) => i.mediaType === 'movie'))
+          );
+        }
+        if (hdhub) {
+          promises.push(
+            hdhub
+              .search(genre && genre !== 'all' ? genre : 'movie', page)
+              .then((items) => items.filter((i) => i.mediaType === 'movie'))
+          );
+        }
+        break;
+      }
+      case 'series': {
+        if (fourk) {
+          promises.push(
+            fourk.browse(page).then((items) => items.filter((i) => i.mediaType === 'series'))
+          );
+        }
+        if (hdhub) {
+          promises.push(
+            hdhub
+              .search(genre && genre !== 'all' ? `${genre} series` : 'season', page)
+              .then((items) => items.filter((i) => i.mediaType === 'series'))
+          );
+        }
+        break;
+      }
+      case '4k': {
+        if (fourk) promises.push(fourk.browse(page));
+        if (hdhub) promises.push(hdhub.search('4k', page));
+        break;
+      }
+      case 'bollywood': {
+        if (hdhub) {
+          promises.push(hdhub.search(genre && genre !== 'all' ? `${genre} hindi` : 'bollywood', page));
+          if (page === 1) promises.push(hdhub.search('hindi', page));
+        }
+        if (fourk) promises.push(fourk.search('hindi', page));
+        break;
+      }
+      case 'trending': {
+        if (fourk) promises.push(fourk.browse(page));
+        if (hdhub) promises.push(hdhub.search('2026', page));
+        break;
+      }
+    }
+
+    const settled = await Promise.allSettled(promises);
+    const combined: CatalogItem[] = [];
+    for (const res of settled) {
+      if (res.status === 'fulfilled') {
+        combined.push(...res.value);
+      }
+    }
+
+    return this.deduplicateCatalog(combined);
   }
 }
 

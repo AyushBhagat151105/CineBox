@@ -26,44 +26,61 @@ export class FourKHdHubProvider implements MediaProvider {
     timeout: 10000,
   });
 
-  async search(query: string): Promise<CatalogItem[]> {
-    const searchUrl = `${this.baseUrl}/?s=${encodeURIComponent(query)}`;
+  private parseMovieCards(root: any): CatalogItem[] {
+    const items: CatalogItem[] = [];
+    const cards = root.querySelectorAll('a.movie-card');
+    for (const el of cards) {
+      const href = el.getAttribute('href');
+      if (!href) continue;
+
+      const postUrl = href.startsWith('http') ? href : `${this.baseUrl}${href}`;
+      const title = el.querySelector('.movie-card-title')?.text?.trim();
+      if (!title) continue;
+
+      const metaText = el.querySelector('.movie-card-meta')?.text?.trim() || '';
+      const yearMatch = metaText.match(/\b(19\d\d|20\d\d)\b/);
+      const year = yearMatch ? yearMatch[1] : undefined;
+
+      const posterUrl = el.querySelector('img')?.getAttribute('src');
+      const isSeries = href.includes('-series-') || /season|series/i.test(title);
+
+      items.push({
+        id: {
+          provider: 'fourkhdhub',
+          value: postUrl,
+        },
+        title,
+        mediaType: isSeries ? 'series' : 'movie',
+        year,
+        posterUrl,
+        availableProviders: ['fourkhdhub'],
+      });
+    }
+    return items;
+  }
+
+  async browse(page = 1): Promise<CatalogItem[]> {
+    const url = page > 1 ? `${this.baseUrl}/?pagex=${page}` : `${this.baseUrl}/`;
+    try {
+      const res = await this.client.get(url);
+      const root = parse(res.data);
+      return this.parseMovieCards(root);
+    } catch (err) {
+      console.warn(`4KHDHub browse (page ${page}) error:`, err);
+      return [];
+    }
+  }
+
+  async search(query: string, page = 1): Promise<CatalogItem[]> {
+    const searchUrl =
+      page > 1
+        ? `${this.baseUrl}/?s=${encodeURIComponent(query)}&pagex=${page}`
+        : `${this.baseUrl}/?s=${encodeURIComponent(query)}`;
 
     try {
       const res = await this.client.get(searchUrl);
       const root = parse(res.data);
-      const items: CatalogItem[] = [];
-
-      const cards = root.querySelectorAll('a.movie-card');
-      for (const el of cards) {
-        const href = el.getAttribute('href');
-        if (!href) continue;
-
-        const postUrl = href.startsWith('http') ? href : `${this.baseUrl}${href}`;
-        const title = el.querySelector('.movie-card-title')?.text?.trim();
-        if (!title) continue;
-
-        const metaText = el.querySelector('.movie-card-meta')?.text?.trim() || '';
-        const yearMatch = metaText.match(/\b(19\d\d|20\d\d)\b/);
-        const year = yearMatch ? yearMatch[1] : undefined;
-
-        const posterUrl = el.querySelector('img')?.getAttribute('src');
-        const isSeries = href.includes('-series-');
-
-        items.push({
-          id: {
-            provider: 'fourkhdhub',
-            value: postUrl,
-          },
-          title,
-          mediaType: isSeries ? 'series' : 'movie',
-          year,
-          posterUrl,
-          availableProviders: ['fourkhdhub'],
-        });
-      }
-
-      return items;
+      return this.parseMovieCards(root);
     } catch (err) {
       console.warn('4KHDHub search error:', err);
       return [];
