@@ -6,7 +6,7 @@ import {
   MediaType,
   PlaybackSource,
   Release,
-} from '../../types/models';
+} from '@/types';
 import { buildSignedHeaders } from './crypto';
 
 const HOST_POOL = [

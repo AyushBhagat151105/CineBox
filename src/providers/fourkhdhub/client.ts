@@ -6,9 +6,9 @@ import {
   MediaDetails,
   PlaybackSource,
   Release,
-} from '../../types/models';
+} from '@/types';
 import { resolveShortenerUrl } from '../hdhub4u/resolver';
-import { parseSeasonEpisode } from '../../utils/seasonEpisode';
+import { parseSeasonEpisode } from '@/utils';
 
 const DEFAULT_BASE_URL = 'https://4khdhub.one';
 const BROWSER_UA =
@@ -195,21 +195,38 @@ export class FourKHdHubProvider implements MediaProvider {
   }
 
   async resolveStream(release: Release): Promise<PlaybackSource> {
-    const mirror = release.mirrors[0];
-    if (!mirror) {
+    if (!release.mirrors || release.mirrors.length === 0) {
+      console.warn(`[4KHDHub] ❌ No mirrors available on release: "${release.filename}"`);
       throw new Error('No mirror available on release');
     }
 
-    const { url, label } = await resolveShortenerUrl(mirror.resolverUrl);
+    console.log(`[4KHDHub] 🔍 Resolving stream for "${release.filename}" across ${release.mirrors.length} mirror(s)...`);
 
-    return {
-      provider: 'fourkhdhub',
-      url,
-      sourceLabel: `4KHDHub · ${label}`,
-      title: release.filename,
-      headers: {
-        'User-Agent': BROWSER_UA,
-      },
-    };
+    let lastError: any = null;
+    for (let i = 0; i < release.mirrors.length; i++) {
+      const mirror = release.mirrors[i];
+      console.log(`[4KHDHub] 🔄 Mirror [${i + 1}/${release.mirrors.length}]: Resolving ${mirror.resolverUrl}`);
+      try {
+        const { url, label } = await resolveShortenerUrl(mirror.resolverUrl);
+        if (url) {
+          console.log(`[4KHDHub] ✅ Mirror [${i + 1}/${release.mirrors.length}] resolved successfully: ${url} (${label})`);
+          return {
+            provider: 'fourkhdhub',
+            url,
+            sourceLabel: `4KHDHub · ${label}`,
+            title: release.filename,
+            headers: {
+              'User-Agent': BROWSER_UA,
+            },
+          };
+        }
+      } catch (err: any) {
+        console.warn(`[4KHDHub] ⚠️ Mirror [${i + 1}/${release.mirrors.length}] failed:`, err?.message);
+        lastError = err;
+      }
+    }
+
+    console.error(`[4KHDHub] ❌ All ${release.mirrors.length} mirror(s) failed for "${release.filename}"`);
+    throw lastError || new Error('Failed resolving 4KHDHub mirrors');
   }
 }

@@ -1,9 +1,15 @@
 import axios from 'axios';
 import { decodeBase64 } from '../../utils/base64';
 
-let activeDomain = 'https://new10.hdhub4u.cl';
+let activeDomain = 'https://hdhub4u.eco';
 let lastProbeTime = 0;
 const PROBE_TTL = 15 * 60 * 1000; // 15 minutes cache
+
+const FALLBACK_DOMAINS = [
+  'https://hdhub4u.eco',
+  'https://hdhub4u.ms',
+  'https://hdhub4u.guru',
+];
 
 const ROUTER_HOSTS = [
   'https://h4.suncdn.org/host/',

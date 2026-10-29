@@ -1,19 +1,24 @@
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { FavoriteItem, WatchHistoryItem } from '../types/models';
+import { FavoriteItem, WatchHistoryItem } from '@/types';
+
+export type PreferredPlayer = 'vlc' | 'chooser';
 
 interface AppState {
   watchHistory: WatchHistoryItem[];
   favorites: FavoriteItem[];
   preferredQuality: '4K' | '1080p' | '720p' | 'Auto';
   preferredLanguage: string;
+  preferredPlayer: PreferredPlayer;
   skipSeconds: number; // 5, 10, 15, 30
   isLoaded: boolean;
 
   loadStorage: () => Promise<void>;
   saveProgress: (item: Omit<WatchHistoryItem, 'timestamp'>) => Promise<void>;
   getProgress: (mediaId: string, season?: number, episode?: number) => WatchHistoryItem | undefined;
+  removeFromHistory: (mediaId: string, season?: number, episode?: number) => Promise<void>;
   setSkipSeconds: (seconds: number) => Promise<void>;
+  setPreferredPlayer: (player: PreferredPlayer) => Promise<void>;
   toggleFavorite: (item: Omit<FavoriteItem, 'addedAt'>) => Promise<void>;
   isFavorite: (mediaId: string) => boolean;
   clearHistory: () => Promise<void>;
@@ -24,21 +29,24 @@ export const useAppStore = create<AppState>((set, get) => ({
   favorites: [],
   preferredQuality: 'Auto',
   preferredLanguage: 'Hindi',
+  preferredPlayer: 'vlc',
   skipSeconds: 10,
   isLoaded: false,
 
   loadStorage: async () => {
     try {
-      const [historyJson, favsJson, skipStr] = await Promise.all([
+      const [historyJson, favsJson, skipStr, playerStr] = await Promise.all([
         AsyncStorage.getItem('@cinebox_history'),
         AsyncStorage.getItem('@cinebox_favorites'),
         AsyncStorage.getItem('@cinebox_skip_seconds'),
+        AsyncStorage.getItem('@cinebox_preferred_player'),
       ]);
 
       set({
         watchHistory: historyJson ? JSON.parse(historyJson) : [],
         favorites: favsJson ? JSON.parse(favsJson) : [],
         skipSeconds: skipStr ? parseInt(skipStr, 10) : 10,
+        preferredPlayer: (playerStr as PreferredPlayer) || 'vlc',
         isLoaded: true,
       });
     } catch {
@@ -51,6 +59,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     await AsyncStorage.setItem('@cinebox_skip_seconds', seconds.toString());
   },
 
+  setPreferredPlayer: async (player: PreferredPlayer) => {
+    set({ preferredPlayer: player });
+    await AsyncStorage.setItem('@cinebox_preferred_player', player);
+  },
+
   getProgress: (mediaId: string, season?: number, episode?: number) => {
     const history = get().watchHistory;
     if (season !== undefined && episode !== undefined) {
@@ -59,6 +72,20 @@ export const useAppStore = create<AppState>((set, get) => ({
       );
     }
     return history.find((h) => h.mediaId === mediaId);
+  },
+
+  removeFromHistory: async (mediaId: string, season?: number, episode?: number) => {
+    const current = get().watchHistory;
+    const filtered = current.filter((h) => {
+      if (h.mediaId !== mediaId) return true;
+      if (season !== undefined && episode !== undefined) {
+        return !(h.season === season && h.episode === episode);
+      }
+      return false;
+    });
+
+    set({ watchHistory: filtered });
+    await AsyncStorage.setItem('@cinebox_history', JSON.stringify(filtered));
   },
 
   saveProgress: async (item) => {

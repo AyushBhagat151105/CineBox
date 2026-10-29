@@ -8,10 +8,10 @@ import {
   Dimensions,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { CatalogItem } from '../types/models';
+import { CatalogItem } from '@/types';
 import { ProviderBadge } from './ProviderBadge';
 import { Ionicons } from '@expo/vector-icons';
-import { cleanMovieTitle, cleanDisplayTitle } from '../utils/title';
+import { cleanMovieTitle, cleanDisplayTitle } from '@/utils';
 
 interface MovieCardProps {
   item: CatalogItem;
@@ -24,7 +24,7 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const DEFAULT_WIDTH = (SCREEN_WIDTH - 48) / 3;
 const DEFAULT_HEIGHT = DEFAULT_WIDTH * 1.5;
 
-export const MovieCard: React.FC<MovieCardProps> = ({
+export const MovieCard: React.FC<MovieCardProps> = React.memo(({
   item,
   width = DEFAULT_WIDTH,
   height = DEFAULT_HEIGHT,
@@ -96,7 +96,7 @@ export const MovieCard: React.FC<MovieCardProps> = ({
       </View>
     </TouchableOpacity>
   );
-};
+});
 
 const styles = StyleSheet.create({
   container: {

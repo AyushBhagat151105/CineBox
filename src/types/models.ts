@@ -43,6 +43,7 @@ export interface SourceMirror {
 export interface Release {
   provider: ProviderId;
   filename: string;
+  releaseName?: string;
   quality: string; // '4K' | '1080p' | '720p' | '480p' | 'HEVC'
   resolution: number; // 2160, 1080, 720, 480
   size?: string;

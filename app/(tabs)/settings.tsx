@@ -11,13 +11,21 @@ import {
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useAppStore } from '../../src/store/useAppStore';
-import { getActiveHDHub4uDomain } from '../../src/providers/hdhub4u/domain';
+import { useAppStore } from '@/store';
+import { getActiveHDHub4uDomain } from '@/providers/hdhub4u/domain';
 
 export default function SettingsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { clearHistory, watchHistory, favorites, skipSeconds, setSkipSeconds } = useAppStore();
+  const {
+    clearHistory,
+    watchHistory,
+    favorites,
+    skipSeconds,
+    setSkipSeconds,
+    preferredPlayer,
+    setPreferredPlayer,
+  } = useAppStore();
 
   const [hdhubDomain, setHdhubDomain] = useState<string>('Probing...');
   const [probing, setProbing] = useState<boolean>(true);
@@ -65,6 +73,46 @@ export default function SettingsScreen() {
       <ScrollView
         contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 40 }]}
         showsVerticalScrollIndicator={false}>
+        {/* Native Video Engine */}
+        <View style={styles.section}>
+          <Text style={styles.sectionHeader}>VIDEO PLAYER ENGINE</Text>
+          <View style={styles.card}>
+            <View style={styles.settingBlock}>
+              <View style={styles.settingHeaderRow}>
+                <View style={[styles.iconBox, { backgroundColor: 'rgba(255, 140, 0, 0.15)' }]}>
+                  <Ionicons name="film-outline" size={18} color="#ff8c00" />
+                </View>
+                <View style={styles.settingTextWrap}>
+                  <Text style={styles.settingTitle}>Native Video Player</Text>
+                  <Text style={styles.settingSubtitle}>
+                    VLC enables hardware-accelerated 4K HDR, Dolby Atmos, and DTS-HD audio
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.segmentedControl}>
+                <TouchableOpacity
+                  onPress={() => setPreferredPlayer('vlc')}
+                  activeOpacity={0.7}
+                  style={[styles.segmentBtn, preferredPlayer === 'vlc' && styles.segmentBtnActive]}>
+                  <Text style={[styles.segmentText, preferredPlayer === 'vlc' && styles.segmentTextActive]}>
+                    VLC for Android
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={() => setPreferredPlayer('chooser')}
+                  activeOpacity={0.7}
+                  style={[styles.segmentBtn, preferredPlayer === 'chooser' && styles.segmentBtnActive]}>
+                  <Text style={[styles.segmentText, preferredPlayer === 'chooser' && styles.segmentTextActive]}>
+                    System Chooser
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </View>
+
         {/* Player Gestures & Controls */}
         <View style={styles.section}>
           <Text style={styles.sectionHeader}>PLAYER GESTURES & SEEKING</Text>

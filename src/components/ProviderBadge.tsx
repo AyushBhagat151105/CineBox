@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { ProviderId } from '../types/models';
+import { ProviderId } from '@/types';
 
 interface ProviderBadgeProps {
   provider: ProviderId;

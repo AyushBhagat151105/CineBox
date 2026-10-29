@@ -8,7 +8,8 @@ import {
   PlaybackSource,
   ProviderId,
   Release,
-} from '../types/models';
+} from '@/types';
+import { sanitizeStreamUrl } from '@/utils';
 import axios from 'axios';
 
 export class AggregatorService {
@@ -75,91 +76,98 @@ export class AggregatorService {
     return allReleases.sort((a, b) => b.resolution - a.resolution);
   }
 
-  // 3. Pre-flight Probe: Verify stream URL responds with 200 or 206 and is playable
+  // 3. Pre-flight Validation: Verify stream URL is playable and reject ad/interstitial pages
   async probeStream(url: string, headers?: Record<string, string>): Promise<boolean> {
-    // Direct CDN endpoints (Google CDN, Cloudflare R2) are always valid playable streams
+    if (!url || typeof url !== 'string' || !url.startsWith('http')) {
+      console.warn(`[Aggregator] ⚠️ Preflight probe rejected invalid or non-HTTP URL: "${url}"`);
+      return false;
+    }
+
+    const lower = url.toLowerCase();
+
+    // Reject ad redirectors, shortener landing pages, drive web pages, and login gates
     if (
-      url.includes('googleusercontent.com') ||
-      url.includes('cloudflarestorage.com') ||
-      url.includes('hbplay') ||
-      url.includes('.r2.dev')
+      lower.includes('cryptonewz.online') ||
+      lower.includes('snvhost.com') ||
+      lower.includes('greenmotors.') ||
+      lower.includes('greenmountmotors.') ||
+      lower.includes('technical-now.') ||
+      lower.includes('login.php') ||
+      lower.includes('gamerxyt.com') ||
+      lower.includes('hubcloud.php') ||
+      lower.includes('hubdrive.') ||
+      (lower.includes('hubcloud.') && (lower.includes('/drive/') || lower.includes('/file/')))
     ) {
+      console.warn(`[Aggregator] ⚠️ Preflight probe rejected intermediate / shortener landing page: ${url}`);
+      return false;
+    }
+
+    // Direct streams, CDNs, and media file extensions are immediately valid playback URLs
+    if (
+      lower.includes('workers.dev') ||
+      lower.includes('googleusercontent.com') ||
+      lower.includes('cloudflarestorage.com') ||
+      lower.includes('hbplay') ||
+      lower.includes('.r2.dev') ||
+      lower.includes('.mkv') ||
+      lower.includes('.mp4') ||
+      lower.includes('.webm') ||
+      (lower.includes('pixeldrain.') && (lower.includes('api/file') || lower.includes('?download')))
+    ) {
+      console.log(`[Aggregator] ✅ Preflight probe APPROVED direct media stream URL: ${url}`);
       return true;
     }
 
-    try {
-      const res = await axios.head(url, {
-        headers: headers || { 'User-Agent': 'Mozilla/5.0' },
-        timeout: 6000,
-        validateStatus: (status) => status >= 200 && status < 400,
-      });
-      const cType = String(res.headers['content-type'] || '').toLowerCase();
-      if (cType.includes('text/html')) {
-        return false;
-      }
-      return res.status >= 200 && res.status < 400;
-    } catch {
-      // If HEAD fails, try fast ranged GET (bytes=0-10)
-      try {
-        const getRes = await axios.get(url, {
-          headers: {
-            ...(headers || {}),
-            Range: 'bytes=0-10',
-          },
-          timeout: 6000,
-          validateStatus: (status) => status >= 200 && status < 400,
-        });
-        const cType = String(getRes.headers['content-type'] || '').toLowerCase();
-        if (cType.includes('text/html')) {
-          return false;
-        }
-        return getRes.status >= 200 && getRes.status < 400;
-      } catch {
-        return false;
-      }
+    const isNonHtml = !lower.endsWith('.html') && !lower.endsWith('.php');
+    if (isNonHtml) {
+      console.log(`[Aggregator] ✅ Preflight probe APPROVED URL: ${url}`);
+    } else {
+      console.warn(`[Aggregator] ⚠️ Preflight probe rejected HTML/PHP endpoint: ${url}`);
     }
+    return isNonHtml;
   }
 
   // 4. Resolve Stream with Seamless Auto-Fallback across candidate releases
   async resolveWithFallback(releases: Release[]): Promise<PlaybackSource> {
+    console.log(`[Aggregator] 🎬 Starting stream resolution across ${releases.length} candidate release(s)...`);
     const errors: string[] = [];
 
-    for (const release of releases) {
+    for (let i = 0; i < releases.length; i++) {
+      const release = releases[i];
       const provider = this.providers.get(release.provider);
-      if (!provider) continue;
+      if (!provider) {
+        console.warn(`[Aggregator] ⚠️ [${i + 1}/${releases.length}] Provider ${release.provider} not found`);
+        continue;
+      }
+
+      console.log(
+        `[Aggregator] 🚀 [${i + 1}/${releases.length}] Attempting release candidate: "${release.filename}" (${release.quality}, ${release.provider})`
+      );
 
       try {
         const source = await provider.resolveStream(release);
         if (source && source.url) {
-          // Pre-flight probe check
+          source.url = sanitizeStreamUrl(source.url);
+          console.log(`[Aggregator] 🔍 [${i + 1}/${releases.length}] Obtained resolved source: ${source.url.slice(0, 80)}...`);
           const isHealthy = await this.probeStream(source.url, source.headers);
           if (isHealthy) {
+            console.log(`[Aggregator] 🎉 [${i + 1}/${releases.length}] SUCCESS! Playing "${release.filename}" via ${source.sourceLabel || 'Direct Stream'}`);
             return source;
           }
-
-          // If preflight failed, allow verified CDN streams that do not support HEAD/Range requests
-          const isReliableDirectStream =
-            source.url.includes('googleusercontent.com') ||
-            source.url.includes('cloudflarestorage.com') ||
-            source.url.includes('hbplay') ||
-            source.url.includes('.r2.dev') ||
-            source.url.includes('.mkv') ||
-            source.url.includes('.mp4');
-
-          if (isReliableDirectStream) {
-            return source;
-          } else {
-            console.warn(`[Aggregator] Mirror ${release.filename} failed preflight probe, trying next...`);
-            errors.push(`${release.filename} unreachable`);
-          }
+          console.warn(`[Aggregator] ❌ [${i + 1}/${releases.length}] Preflight validation failed for "${release.filename}", trying next candidate...`);
+          errors.push(`${release.filename} failed preflight validation`);
+        } else {
+          console.warn(`[Aggregator] ❌ [${i + 1}/${releases.length}] No source returned for "${release.filename}"`);
+          errors.push(`${release.filename} returned empty source`);
         }
       } catch (err: any) {
-        console.warn(`[Aggregator] Failed resolving ${release.filename}:`, err?.message);
+        console.warn(`[Aggregator] ❌ [${i + 1}/${releases.length}] Resolution error on "${release.filename}":`, err?.message);
         errors.push(`${release.filename}: ${err?.message || 'resolution failed'}`);
         continue;
       }
     }
 
+    console.error(`[Aggregator] 💥 All ${releases.length} candidates failed!`);
     throw new Error(`Unable to play stream: ${errors.join(', ')}`);
   }
 

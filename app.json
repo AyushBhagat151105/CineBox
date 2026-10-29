@@ -17,6 +17,7 @@
         "ACCESS_NETWORK_STATE",
         "WAKE_LOCK"
       ],
+      "usesCleartextTraffic": true,
       "adaptiveIcon": {
         "backgroundColor": "#0a0a0f",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -32,12 +33,6 @@
     },
     "plugins": [
       "expo-router",
-      [
-        "expo-video",
-        {
-          "supportsPictureInPicture": true
-        }
-      ],
       [
         "expo-splash-screen",
         {

@@ -1,4 +1,4 @@
-import { CatalogItem, MediaDetails, Release, PlaybackSource, ProviderId } from '../types/models';
+import { CatalogItem, MediaDetails, Release, PlaybackSource, ProviderId } from '@/types';
 
 export interface MediaProvider {
   id: ProviderId;

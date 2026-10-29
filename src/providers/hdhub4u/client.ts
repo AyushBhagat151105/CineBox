@@ -5,8 +5,8 @@ import {
   MediaDetails,
   PlaybackSource,
   Release
-} from '../../types/models';
-import { cleanDisplayTitle, cleanMovieTitle } from '../../utils/title';
+} from '@/types';
+import { cleanDisplayTitle, cleanMovieTitle } from '@/utils';
 import { MediaProvider } from '../base';
 import { getActiveHDHub4uDomain } from './domain';
 import { resolveShortenerUrl } from './resolver';
@@ -222,7 +222,7 @@ export class HDHub4uProvider implements MediaProvider {
     const defaultSeason = postSeasonMatch ? parseInt(postSeasonMatch[1], 10) : undefined;
 
     const entry = root.querySelector('.entry-content') || root;
-    const blocks = entry.querySelectorAll('h2, h3, h4, h5, p, div');
+    const blocks = entry.querySelectorAll('h2, h3, h4, h5, p');
 
     let currentEpisode: number | undefined;
     let activeSeason: number | undefined = defaultSeason;
@@ -269,25 +269,50 @@ export class HDHub4uProvider implements MediaProvider {
         continue;
       }
 
-      // Determine quality
-      let quality = '1080p FHD';
-      let resolution = 1080;
-      if (/\b(?:4k|2160p|uhd)\b/i.test(text)) {
-        quality = '4K UHD';
-        resolution = 2160;
-      } else if (/\b1080p\b/i.test(text)) {
-        quality = '1080p FHD';
-        resolution = 1080;
-      } else if (/\b720p\b/i.test(text)) {
-        quality = '720p HD';
-        resolution = 720;
-      } else if (/\b480p\b/i.test(text)) {
-        quality = '480p';
-        resolution = 480;
-      }
-
+      // Parse size if present
       const sizeMatch = text.match(/(\d+(?:\.\d+)?\s*(?:GB|MB|GiB|MiB))/i);
       const sizeStr = sizeMatch ? sizeMatch[1] : undefined;
+      let sizeInMB: number | undefined;
+      if (sizeStr) {
+        const num = parseFloat(sizeStr);
+        if (/GB|GiB/i.test(sizeStr)) sizeInMB = num * 1024;
+        else if (/MB|MiB/i.test(sizeStr)) sizeInMB = num;
+      }
+
+      // Determine quality strictly from link anchor text or short heading block
+      const targetText = (text.length < 160 ? text : dlLinks.map((l) => l.text).join(' ')).toLowerCase();
+
+      let quality = '1080p FHD';
+      let resolution = 1080;
+
+      if (/\b(?:480p|360p)\b/.test(targetText)) {
+        quality = '480p';
+        resolution = 480;
+      } else if (/\b720p\b/.test(targetText)) {
+        quality = '720p HD';
+        resolution = 720;
+      } else if (/\b1080p\b/.test(targetText)) {
+        quality = '1080p FHD';
+        resolution = 1080;
+      } else if (/\b(?:4k|2160p|uhd)\b/.test(targetText) && (!sizeInMB || sizeInMB >= 1500)) {
+        quality = '4K UHD';
+        resolution = 2160;
+      } else if (sizeInMB !== undefined) {
+        // Fallback quality based on physical file size
+        if (sizeInMB < 600) {
+          quality = '480p';
+          resolution = 480;
+        } else if (sizeInMB < 1800) {
+          quality = '720p HD';
+          resolution = 720;
+        } else if (sizeInMB < 6000) {
+          quality = '1080p FHD';
+          resolution = 1080;
+        } else {
+          quality = '4K UHD';
+          resolution = 2160;
+        }
+      }
 
       const isPack = /pack|complete/i.test(text);
 
@@ -337,14 +362,20 @@ export class HDHub4uProvider implements MediaProvider {
 
   async resolveStream(release: Release): Promise<PlaybackSource> {
     if (!release.mirrors || release.mirrors.length === 0) {
+      console.warn(`[HDHub4u] ❌ No mirror available on release: "${release.filename}"`);
       throw new Error('No mirror available on release');
     }
 
+    console.log(`[HDHub4u] 🔍 Resolving stream for "${release.filename}" across ${release.mirrors.length} mirror(s)...`);
+
     let lastError: any = null;
-    for (const mirror of release.mirrors) {
+    for (let i = 0; i < release.mirrors.length; i++) {
+      const mirror = release.mirrors[i];
+      console.log(`[HDHub4u] 🔄 Mirror [${i + 1}/${release.mirrors.length}]: Resolving ${mirror.resolverUrl}`);
       try {
         const { url, label } = await resolveShortenerUrl(mirror.resolverUrl);
         if (url) {
+          console.log(`[HDHub4u] ✅ Mirror [${i + 1}/${release.mirrors.length}] resolved successfully: ${url} (${label})`);
           return {
             provider: 'hdhub4u',
             url,
@@ -355,11 +386,13 @@ export class HDHub4uProvider implements MediaProvider {
             },
           };
         }
-      } catch (err) {
+      } catch (err: any) {
+        console.warn(`[HDHub4u] ⚠️ Mirror [${i + 1}/${release.mirrors.length}] failed:`, err?.message);
         lastError = err;
       }
     }
 
+    console.error(`[HDHub4u] ❌ All ${release.mirrors.length} mirror(s) failed for "${release.filename}"`);
     throw lastError || new Error('Could not resolve any mirror for release');
   }
 }

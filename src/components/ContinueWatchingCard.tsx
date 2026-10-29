@@ -1,23 +1,27 @@
-import React, { useState } from 'react';
-import { View, Text, Image, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
-import { useRouter } from 'expo-router';
-import { WatchHistoryItem } from '../types/models';
+import { aggregator } from '@/providers';
+import { vlcService } from '@/services';
+import { useAppStore, usePlayerStore } from '@/store';
+import { WatchHistoryItem } from '@/types';
+import { cleanDisplayTitle } from '@/utils';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
+import React, { useState } from 'react';
+import { ActivityIndicator, Alert, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { ProviderBadge } from './ProviderBadge';
-import { aggregator } from '../providers/aggregator';
-import { usePlayerStore } from '../store/usePlayerStore';
-import { cleanDisplayTitle } from '../utils/title';
 
 interface ContinueWatchingCardProps {
   item: WatchHistoryItem;
   onPress?: () => void;
 }
 
-export const ContinueWatchingCard: React.FC<ContinueWatchingCardProps> = ({ item }) => {
+export const ContinueWatchingCard: React.FC<ContinueWatchingCardProps> = React.memo(({ item }) => {
   const router = useRouter();
   const setPlayback = usePlayerStore((s) => s.setPlayback);
   const setAvailableReleases = usePlayerStore((s) => s.setAvailableReleases);
   const [isResuming, setIsResuming] = useState(false);
+
+  const removeFromHistory = useAppStore((s) => s.removeFromHistory);
+  const preferredPlayer = useAppStore((s) => s.preferredPlayer);
 
   const progressPercent =
     item.durationSeconds > 0
@@ -47,16 +51,19 @@ export const ContinueWatchingCard: React.FC<ContinueWatchingCardProps> = ({ item
         setPlayback(source, candidates[0], item.positionSeconds);
         setAvailableReleases(candidates);
 
-        router.push({
-          pathname: '/player',
-          params: {
-            title: cleanDisplayTitle(item.title),
-            streamUrl: source.url,
-            mediaId: item.mediaId,
-            provider: item.provider,
-            posterUrl: item.posterUrl || '',
-            resumeSeconds: item.positionSeconds.toString(),
-          },
+        await vlcService.launch({
+          streamUrl: source.url,
+          title: cleanDisplayTitle(item.title),
+          mediaId: item.mediaId,
+          provider: item.provider,
+          posterUrl: item.posterUrl,
+          releaseName: candidates[0]?.releaseName || item.releaseName,
+          season: item.season,
+          episode: item.episode,
+          resumeSeconds: item.positionSeconds,
+          durationSeconds: item.durationSeconds,
+          headers: source.headers,
+          forceChooser: preferredPlayer === 'chooser',
         });
         return;
       }
@@ -78,6 +85,21 @@ export const ContinueWatchingCard: React.FC<ContinueWatchingCardProps> = ({ item
     });
   };
 
+  const handleLongPress = () => {
+    Alert.alert(
+      'Remove from Continue Watching',
+      `Do you want to remove "${item.title}" from your continue watching list?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: () => removeFromHistory(item.mediaId, item.season, item.episode),
+        },
+      ]
+    );
+  };
+
   const formatTime = (secs: number) => {
     const mins = Math.floor(secs / 60);
     const hrs = Math.floor(mins / 60);
@@ -92,6 +114,7 @@ export const ContinueWatchingCard: React.FC<ContinueWatchingCardProps> = ({ item
     <TouchableOpacity
       activeOpacity={0.85}
       onPress={handleResume}
+      onLongPress={handleLongPress}
       style={styles.card}>
       <View style={styles.thumbnailContainer}>
         {item.posterUrl ? (
@@ -130,7 +153,7 @@ export const ContinueWatchingCard: React.FC<ContinueWatchingCardProps> = ({ item
       </View>
     </TouchableOpacity>
   );
-};
+});
 
 const styles = StyleSheet.create({
   card: {

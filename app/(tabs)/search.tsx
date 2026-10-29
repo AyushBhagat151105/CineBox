@@ -12,9 +12,9 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { aggregator } from '../../src/providers/aggregator';
-import { CatalogItem, MediaType, ProviderId } from '../../src/types/models';
-import { MovieCard } from '../../src/components/MovieCard';
+import { aggregator } from '@/providers';
+import { CatalogItem, MediaType, ProviderId } from '@/types';
+import { MovieCard } from '@/components';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const COLUMN_WIDTH = (SCREEN_WIDTH - 48) / 3;
@@ -160,9 +160,13 @@ export default function SearchScreen() {
       ) : filteredResults.length > 0 ? (
         <FlatList
           data={filteredResults}
-          keyExtractor={(item) => `${item.id.provider}_${item.id.value}`}
+          keyExtractor={(item, index) => `${item.id.provider}_${item.id.value}_${index}`}
           numColumns={3}
           contentContainerStyle={styles.gridContent}
+          initialNumToRender={9}
+          maxToRenderPerBatch={9}
+          windowSize={5}
+          removeClippedSubviews
           renderItem={({ item }) => (
             <MovieCard item={item} width={COLUMN_WIDTH} height={COLUMN_WIDTH * 1.5} />
           )}

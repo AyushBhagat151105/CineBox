@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { PlaybackSource, Release } from '../types/models';
+import { PlaybackSource, Release } from '@/types';
 
 interface PlayerState {
   activeSource: PlaybackSource | null;

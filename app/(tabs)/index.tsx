@@ -3,6 +3,7 @@ import {
   View,
   Text,
   ScrollView,
+  FlatList,
   StyleSheet,
   TouchableOpacity,
   RefreshControl,
@@ -13,13 +14,11 @@ import {
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { aggregator } from '../../src/providers/aggregator';
-import { CatalogItem } from '../../src/types/models';
-import { MovieCard } from '../../src/components/MovieCard';
-import { ContinueWatchingCard } from '../../src/components/ContinueWatchingCard';
-import { ProviderBadge } from '../../src/components/ProviderBadge';
-import { useAppStore } from '../../src/store/useAppStore';
-import { cleanMovieTitle, cleanDisplayTitle } from '../../src/utils/title';
+import { aggregator } from '@/providers';
+import { CatalogItem, WatchHistoryItem } from '@/types';
+import { MovieCard, ContinueWatchingCard, ProviderBadge } from '@/components';
+import { useAppStore } from '@/store';
+import { cleanMovieTitle, cleanDisplayTitle } from '@/utils';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -90,6 +89,26 @@ export default function HomeScreen() {
     fetchContent();
   };
 
+  const renderMovieCard = useCallback(
+    ({ item }: { item: CatalogItem }) => <MovieCard item={item} />,
+    []
+  );
+
+  const movieKeyExtractor = useCallback(
+    (item: CatalogItem) => `${item.id.provider}_${item.id.value}`,
+    []
+  );
+
+  const renderContinueWatching = useCallback(
+    ({ item }: { item: WatchHistoryItem }) => <ContinueWatchingCard item={item} />,
+    []
+  );
+
+  const continueWatchingKeyExtractor = useCallback(
+    (item: WatchHistoryItem) => `${item.mediaId}_${item.season ?? 0}_${item.episode ?? 0}`,
+    []
+  );
+
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       {/* Top Header */}
@@ -130,14 +149,18 @@ export default function HomeScreen() {
               </View>
             </View>
 
-            <ScrollView
+            <FlatList
               horizontal
               showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.horizontalList}>
-              {watchHistory.map((item) => (
-                <ContinueWatchingCard key={item.mediaId} item={item} />
-              ))}
-            </ScrollView>
+              contentContainerStyle={styles.horizontalList}
+              data={watchHistory}
+              renderItem={renderContinueWatching}
+              keyExtractor={continueWatchingKeyExtractor}
+              initialNumToRender={3}
+              maxToRenderPerBatch={3}
+              windowSize={3}
+              removeClippedSubviews
+            />
           </View>
         )}
 
@@ -205,14 +228,18 @@ export default function HomeScreen() {
                   </View>
                 </View>
 
-                <ScrollView
+                <FlatList
                   horizontal
                   showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.horizontalList}>
-                  {bollywoodItems.map((item) => (
-                    <MovieCard key={`${item.id.provider}_${item.id.value}`} item={item} />
-                  ))}
-                </ScrollView>
+                  contentContainerStyle={styles.horizontalList}
+                  data={bollywoodItems}
+                  renderItem={renderMovieCard}
+                  keyExtractor={movieKeyExtractor}
+                  initialNumToRender={4}
+                  maxToRenderPerBatch={4}
+                  windowSize={3}
+                  removeClippedSubviews
+                />
               </View>
             )}
 
@@ -226,14 +253,18 @@ export default function HomeScreen() {
                   </View>
                 </View>
 
-                <ScrollView
+                <FlatList
                   horizontal
                   showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.horizontalList}>
-                  {fourkItems.map((item) => (
-                    <MovieCard key={`${item.id.provider}_${item.id.value}`} item={item} />
-                  ))}
-                </ScrollView>
+                  contentContainerStyle={styles.horizontalList}
+                  data={fourkItems}
+                  renderItem={renderMovieCard}
+                  keyExtractor={movieKeyExtractor}
+                  initialNumToRender={4}
+                  maxToRenderPerBatch={4}
+                  windowSize={3}
+                  removeClippedSubviews
+                />
               </View>
             )}
 
@@ -247,14 +278,18 @@ export default function HomeScreen() {
                   </View>
                 </View>
 
-                <ScrollView
+                <FlatList
                   horizontal
                   showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.horizontalList}>
-                  {trendingItems.map((item) => (
-                    <MovieCard key={`${item.id.provider}_${item.id.value}`} item={item} />
-                  ))}
-                </ScrollView>
+                  contentContainerStyle={styles.horizontalList}
+                  data={trendingItems}
+                  renderItem={renderMovieCard}
+                  keyExtractor={movieKeyExtractor}
+                  initialNumToRender={4}
+                  maxToRenderPerBatch={4}
+                  windowSize={3}
+                  removeClippedSubviews
+                />
               </View>
             )}
           </>

@@ -13,17 +13,16 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { aggregator } from '../src/providers/aggregator';
+import { aggregator } from '@/providers';
 import {
   MediaDetails,
   ProviderId,
   Release,
-} from '../src/types/models';
-import { ProviderBadge } from '../src/components/ProviderBadge';
-import { QualityBadge } from '../src/components/QualityBadge';
-import { useAppStore } from '../src/store/useAppStore';
-import { usePlayerStore } from '../src/store/usePlayerStore';
-import { cleanDisplayTitle } from '../src/utils/title';
+} from '@/types';
+import { ProviderBadge, QualityBadge } from '@/components';
+import { useAppStore, usePlayerStore } from '@/store';
+import { cleanDisplayTitle } from '@/utils';
+import { vlcService } from '@/services';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -230,6 +229,7 @@ export default function DetailsScreen() {
   }, [releases]);
 
   const handlePlayRelease = async (release: Release) => {
+    console.log(`[Details] ▶️ User clicked Play for release: "${release.filename}"`);
     setResolvingRelease(release.filename);
     try {
       // Find candidate mirrors for seamless auto-failover
@@ -242,27 +242,35 @@ export default function DetailsScreen() {
             r.episode === release.episode
         ),
       ];
+      console.log(`[Details] 📋 Prepared ${candidates.length} candidate(s) for playback failover`);
 
       const source = await aggregator.resolveWithFallback(candidates);
       const resumeSec = paramResumeSeconds
         ? parseInt(paramResumeSeconds, 10)
         : currentActiveProgress?.positionSeconds || 0;
 
+      console.log(`[Details] 🎯 Stream resolved successfully: ${source.url.slice(0, 80)}... (resume: ${resumeSec}s)`);
+
       setPlayback(source, release, resumeSec);
       setAvailableReleases(candidates.length > 0 ? candidates : releases);
 
-      router.push({
-        pathname: '/player',
-        params: {
-          title: cleanDisplayTitle(paramTitle || details?.title || release.filename),
-          streamUrl: source.url,
-          mediaId,
-          provider,
-          posterUrl: paramPosterUrl || details?.posterUrl || '',
-          resumeSeconds: resumeSec.toString(),
-        },
+      const preferredPlayer = useAppStore.getState().preferredPlayer;
+      console.log(`[Details] 🚀 Handing off to VLC Service (preferredPlayer: ${preferredPlayer})`);
+      await vlcService.launch({
+        streamUrl: source.url,
+        title: cleanDisplayTitle(paramTitle || details?.title || release.filename),
+        mediaId,
+        provider,
+        posterUrl: paramPosterUrl || details?.posterUrl || '',
+        releaseName: release.releaseName || release.filename,
+        season: release.season,
+        episode: release.episode,
+        resumeSeconds: resumeSec,
+        headers: source.headers,
+        forceChooser: preferredPlayer === 'chooser',
       });
     } catch (err: any) {
+      console.error(`[Details] ❌ Playback failed:`, err?.message);
       Alert.alert('Playback Failed', err.message || 'Could not resolve stream source');
     } finally {
       setResolvingRelease(null);
@@ -272,6 +280,7 @@ export default function DetailsScreen() {
   const handleQuickPlay = async () => {
     const pool = filteredReleases.length > 0 ? filteredReleases : releases;
     if (pool.length === 0) return;
+    console.log(`[Details] ⚡ Quick Play initiated across pool of ${pool.length} release(s)`);
     setResolvingRelease('quick_play');
     try {
       const source = await aggregator.resolveWithFallback(pool);
@@ -280,21 +289,28 @@ export default function DetailsScreen() {
         ? parseInt(paramResumeSeconds, 10)
         : currentActiveProgress?.positionSeconds || 0;
 
+      console.log(`[Details] 🎯 Quick Play stream resolved: ${source.url.slice(0, 80)}... (resume: ${resumeSec}s)`);
+
       setPlayback(source, chosenRelease, resumeSec);
       setAvailableReleases(pool);
 
-      router.push({
-        pathname: '/player',
-        params: {
-          title: cleanDisplayTitle(paramTitle || details?.title || 'Video Player'),
-          streamUrl: source.url,
-          mediaId,
-          provider,
-          posterUrl: paramPosterUrl || details?.posterUrl || '',
-          resumeSeconds: resumeSec.toString(),
-        },
+      const preferredPlayer = useAppStore.getState().preferredPlayer;
+      console.log(`[Details] 🚀 Quick Play handing off to VLC Service (preferredPlayer: ${preferredPlayer})`);
+      await vlcService.launch({
+        streamUrl: source.url,
+        title: cleanDisplayTitle(paramTitle || details?.title || 'Video Player'),
+        mediaId,
+        provider,
+        posterUrl: paramPosterUrl || details?.posterUrl || '',
+        releaseName: chosenRelease.releaseName || chosenRelease.filename,
+        season: chosenRelease.season,
+        episode: chosenRelease.episode,
+        resumeSeconds: resumeSec,
+        headers: source.headers,
+        forceChooser: preferredPlayer === 'chooser',
       });
     } catch (err: any) {
+      console.error(`[Details] ❌ Quick Play failed:`, err?.message);
       Alert.alert('Auto-Play Failed', err.message || 'All mirrors exhausted');
     } finally {
       setResolvingRelease(null);

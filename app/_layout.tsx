@@ -4,7 +4,8 @@ import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
 import 'react-native-reanimated';
 import { StatusBar } from 'expo-status-bar';
-import { useAppStore } from '../src/store/useAppStore';
+import { useAppStore } from '@/store';
+import { THEME } from '@/constants';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -75,13 +76,6 @@ export default function RootLayout() {
           options={{
             headerShown: false,
             animation: 'slide_from_right',
-          }}
-        />
-        <Stack.Screen
-          name="modal"
-          options={{
-            presentation: 'modal',
-            title: 'Info',
           }}
         />
       </Stack>

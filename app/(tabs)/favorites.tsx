@@ -9,9 +9,9 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useAppStore } from '../../src/store/useAppStore';
-import { MovieCard } from '../../src/components/MovieCard';
-import { CatalogItem } from '../../src/types/models';
+import { useAppStore } from '@/store';
+import { MovieCard } from '@/components';
+import { CatalogItem } from '@/types';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const COLUMN_WIDTH = (SCREEN_WIDTH - 48) / 3;

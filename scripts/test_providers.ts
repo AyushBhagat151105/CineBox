@@ -1,8 +1,10 @@
-import { getActiveHDHub4uDomain } from '../src/providers/hdhub4u/domain';
-import { HDHub4uProvider } from '../src/providers/hdhub4u/client';
-import { FourKHdHubProvider } from '../src/providers/fourkhdhub/client';
-import { MovieBoxProvider } from '../src/providers/moviebox/client';
-import { aggregator } from '../src/providers/aggregator';
+import {
+  aggregator,
+  getActiveHDHub4uDomain,
+  HDHub4uProvider,
+  FourKHdHubProvider,
+  MovieBoxProvider,
+} from '@/providers';
 
 async function main() {
   console.log('==================================================');
