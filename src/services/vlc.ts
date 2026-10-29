@@ -69,6 +69,12 @@ class VlcService {
       return false;
     }
 
+    // Reconcile and finish prior session if user launches another media
+    if (this.activeSession) {
+      console.log('[VLC] 🔄 Closing prior session before launching new media');
+      await this.handlePlaybackReturn();
+    }
+
     // Record session for automatic resume tracking
     this.activeSession = {
       options: { ...options, streamUrl },
@@ -121,9 +127,12 @@ class VlcService {
     const userAgent = headers['User-Agent'] || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)';
 
     // Intent parameters for VLC for Android and universal video players (MX Player, Just Player)
+    // flags 0x24000000 = FLAG_ACTIVITY_CLEAR_TOP (0x04000000) | FLAG_ACTIVITY_SINGLE_TOP (0x20000000)
+    // This clears any lingering background/previous playback in VLC and loads the new stream immediately.
     const intentParams: IntentLauncher.IntentLauncherParams = {
       data: cleanUrl,
       type: 'video/*',
+      flags: 0x24000000,
       extra: {
         title,
         itemTitle: title,
@@ -146,6 +155,7 @@ class VlcService {
       title,
       resumePositionMs,
       from_start: resumeSeconds <= 0,
+      flags: '0x24000000 (CLEAR_TOP | SINGLE_TOP)',
     });
 
     try {
@@ -154,8 +164,33 @@ class VlcService {
       await this.handlePlaybackReturn(result.extra);
       return true;
     } catch (err: any) {
-      console.warn(`[VLC] ⚠️ Direct launch of ${intentParams.packageName} failed (${err?.message}), falling back to chooser...`);
-      // If targeting VLC directly failed, prompt user to install or use system chooser
+      const errMsg = err?.message || '';
+      console.warn(`[VLC] ⚠️ Direct launch of ${intentParams.packageName} failed (${errMsg})`);
+
+      // If expo-intent-launcher has a pending activity lock (user switched apps without pressing back inside VLC):
+      // Launch via Linking intent to bypass the pendingPromise lock
+      const isActivityLock =
+        errMsg.includes('ActivityAlreadyStarted') ||
+        errMsg.includes('already in progress') ||
+        errMsg.includes('Another activity');
+
+      if (isActivityLock) {
+        console.log('[VLC] 🔄 Resolving activity lock via Direct Intent/Linking fallback...');
+        try {
+          const intentUri = `intent://${cleanUrl.replace(/^https?:\/\//, '')}#Intent;scheme=${cleanUrl.startsWith('https') ? 'https' : 'http'};package=org.videolan.vlc;type=video/*;i.position=${resumePositionMs};S.title=${encodeURIComponent(title)};end`;
+          const canOpen = await Linking.canOpenURL(intentUri);
+          if (canOpen) {
+            await Linking.openURL(intentUri);
+            return true;
+          }
+          await Linking.openURL(cleanUrl);
+          return true;
+        } catch (linkingErr: any) {
+          console.warn('[VLC] ⚠️ Direct Intent Linking fallback failed:', linkingErr?.message);
+        }
+      }
+
+      // If targeting VLC directly failed because package not found, prompt user with fallback dialog
       return this.handleLaunchFallback(streamUrl, title, resumeSeconds, headers);
     }
   }

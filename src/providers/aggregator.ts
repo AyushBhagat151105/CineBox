@@ -99,13 +99,38 @@ export class AggregatorService {
       return false;
     }
 
+    // Reject HTML/PHP web pages immediately
+    if (lower.endsWith('.html') || lower.endsWith('.php')) {
+      console.warn(`[Aggregator] ⚠️ Preflight probe rejected HTML/PHP endpoint: ${url}`);
+      return false;
+    }
+
+    // Verify Cloudflare R2 / S3 storage URLs are active and not returning 403 Forbidden
+    if (lower.includes('cloudflarestorage.com') || lower.includes('.r2.dev')) {
+      try {
+        const probeRes = await axios.head(url, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+            ...(headers || {}),
+          },
+          timeout: 2500,
+          validateStatus: (s) => s >= 200 && s < 400,
+        });
+        if (probeRes.status >= 200 && probeRes.status < 400) {
+          console.log(`[Aggregator] ✅ Preflight probe confirmed R2 stream active (${probeRes.status}): ${url.slice(0, 70)}...`);
+          return true;
+        }
+      } catch (r2Err: any) {
+        console.warn(`[Aggregator] ❌ Preflight probe rejected inactive R2 stream (${r2Err.response?.status || r2Err.message}): ${url.slice(0, 70)}...`);
+        return false;
+      }
+    }
+
     // Direct streams, CDNs, and media file extensions are immediately valid playback URLs
     if (
       lower.includes('workers.dev') ||
       lower.includes('googleusercontent.com') ||
-      lower.includes('cloudflarestorage.com') ||
       lower.includes('hbplay') ||
-      lower.includes('.r2.dev') ||
       lower.includes('.mkv') ||
       lower.includes('.mp4') ||
       lower.includes('.webm') ||
@@ -115,13 +140,8 @@ export class AggregatorService {
       return true;
     }
 
-    const isNonHtml = !lower.endsWith('.html') && !lower.endsWith('.php');
-    if (isNonHtml) {
-      console.log(`[Aggregator] ✅ Preflight probe APPROVED URL: ${url}`);
-    } else {
-      console.warn(`[Aggregator] ⚠️ Preflight probe rejected HTML/PHP endpoint: ${url}`);
-    }
-    return isNonHtml;
+    console.log(`[Aggregator] ✅ Preflight probe APPROVED URL: ${url}`);
+    return true;
   }
 
   // 4. Resolve Stream with Seamless Auto-Fallback across candidate releases

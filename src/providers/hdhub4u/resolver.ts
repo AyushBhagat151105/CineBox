@@ -62,6 +62,35 @@ export function extractGreenmotorsPayload(html: string): string | null {
   return null;
 }
 
+/**
+ * Fast reachability check (HEAD / byte-range GET) for Cloudflare R2 / direct stream links.
+ * Catches 403 Forbidden (suspended R2 accounts / expired URLs) and 404s before handing to VLC.
+ */
+async function verifyStreamReachable(url: string): Promise<boolean> {
+  try {
+    const res = await axios.head(url, {
+      headers: { 'User-Agent': BROWSER_UA },
+      timeout: 2500,
+      validateStatus: (s) => s >= 200 && s < 400,
+    });
+    return res.status >= 200 && res.status < 400;
+  } catch (err: any) {
+    if (err.response?.status === 405 || !err.response) {
+      try {
+        const getRes = await axios.get(url, {
+          headers: { 'User-Agent': BROWSER_UA, Range: 'bytes=0-0' },
+          timeout: 2500,
+          validateStatus: (s) => s >= 200 && s < 400,
+        });
+        return getRes.status >= 200 && getRes.status < 400;
+      } catch {
+        return false;
+      }
+    }
+    return false;
+  }
+}
+
 export async function resolveHubCloudStream(
   hubcloudUrl: string
 ): Promise<{ url: string; label: string; headers?: Record<string, string> }> {
@@ -124,6 +153,14 @@ export async function resolveHubCloudStream(
       !href.includes('google-index.workers.dev')
     ) {
       const cleanUrl = sanitizeStreamUrl(href);
+      // Fast check if Cloudflare R2 bucket is suspended or dead (e.g. 403 Forbidden / NotEntitled)
+      if (cleanUrl.includes('cloudflarestorage.com') || cleanUrl.includes('.r2.dev')) {
+        const isOk = await verifyStreamReachable(cleanUrl);
+        if (!isOk) {
+          console.warn(`[HubCloud] ⚠️ Priority 1: Cloudflare R2 bucket inaccessible (403/404), skipping...`);
+          continue;
+        }
+      }
       const label = a.text.trim() || 'Direct Video Stream';
       console.log(`[HubCloud] 🎯 Priority 1 MATCH! Cloudflare Worker / Direct Media Stream: ${cleanUrl} [${label}]`);
       return {
@@ -143,11 +180,16 @@ export async function resolveHubCloudStream(
           const decoded = decodeBase64(uParam);
           if (decoded.startsWith('http')) {
             const cleanUrl = sanitizeStreamUrl(decoded);
-            console.log(`[HubCloud] 🎯 Priority 2 MATCH! Unpacked Cloudflare R2 stream: ${cleanUrl}`);
-            return {
-              url: cleanUrl,
-              label: 'Cloudflare Fast Stream',
-            };
+            const isOk = await verifyStreamReachable(cleanUrl);
+            if (isOk) {
+              console.log(`[HubCloud] 🎯 Priority 2 MATCH! Unpacked Cloudflare R2 stream: ${cleanUrl}`);
+              return {
+                url: cleanUrl,
+                label: 'Cloudflare Fast Stream',
+              };
+            } else {
+              console.warn(`[HubCloud] ⚠️ Priority 2: Unpacked R2 stream inaccessible (403/404), skipping...`);
+            }
           }
         }
       } catch {}
@@ -159,11 +201,16 @@ export async function resolveHubCloudStream(
     const href = a.getAttribute('href') || '';
     if (href.includes('cloudflarestorage.com') || href.includes('.r2.dev')) {
       const cleanUrl = sanitizeStreamUrl(href);
-      console.log(`[HubCloud] 🎯 Priority 3 MATCH! Direct Cloudflare R2 Storage URL: ${cleanUrl}`);
-      return {
-        url: cleanUrl,
-        label: 'Cloudflare Fast Stream',
-      };
+      const isOk = await verifyStreamReachable(cleanUrl);
+      if (isOk) {
+        console.log(`[HubCloud] 🎯 Priority 3 MATCH! Direct Cloudflare R2 Storage URL: ${cleanUrl}`);
+        return {
+          url: cleanUrl,
+          label: 'Cloudflare Fast Stream',
+        };
+      } else {
+        console.warn(`[HubCloud] ⚠️ Priority 3: Direct R2 storage inaccessible (403/404), skipping...`);
+      }
     }
   }
 
