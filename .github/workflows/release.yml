@@ -48,7 +48,13 @@ jobs:
         run: |
           cd android
           chmod +x gradlew
-          ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a,armeabi-v7a
+          if [ -n "$ANDROID_NDK_ROOT" ] && [ -d "$ANDROID_NDK_ROOT" ]; then
+            INSTALLED_NDK=$(basename "$ANDROID_NDK_ROOT")
+          elif [ -d "$ANDROID_HOME/ndk" ]; then
+            INSTALLED_NDK=$(ls -1 "$ANDROID_HOME/ndk" | grep "^27\." | head -n 1 || ls -1 "$ANDROID_HOME/ndk" | head -n 1)
+          fi
+          echo "Selected NDK version: ${INSTALLED_NDK:-auto}"
+          ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a,armeabi-v7a ${INSTALLED_NDK:+-PndkVersion=$INSTALLED_NDK}
 
       - name: Prepare Release Asset
         run: |
