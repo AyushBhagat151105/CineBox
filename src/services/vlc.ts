@@ -3,6 +3,7 @@ import * as IntentLauncher from 'expo-intent-launcher';
 import { ProviderId } from '@/types';
 import { useAppStore } from '@/store';
 import { sanitizeStreamUrl } from '@/utils';
+import { adService } from './ads';
 
 export interface VlcPlaybackOptions {
   streamUrl: string;
@@ -56,6 +57,24 @@ class VlcService {
    * Launch external VLC player with hardware acceleration and resume timestamp
    */
   async launch(options: VlcPlaybackOptions): Promise<boolean> {
+    const isUnlocked = await adService.isAdUnlocked();
+    if (!isUnlocked) {
+      return new Promise<boolean>((resolve) => {
+        adService.ensureUnlockedOrPrompt(
+          options.title,
+          async () => {
+            const launched = await this.executeLaunch(options);
+            resolve(launched);
+          },
+          () => resolve(false)
+        );
+      });
+    }
+
+    return this.executeLaunch(options);
+  }
+
+  private async executeLaunch(options: VlcPlaybackOptions): Promise<boolean> {
     const {
       title,
       resumeSeconds = 0,
@@ -98,14 +117,11 @@ class VlcService {
 
     if (Platform.OS === 'android') {
       return this.launchAndroidIntent(streamUrl, title, resumeSeconds, headers, forceChooser);
+    } else if (Platform.OS === 'ios') {
+      return this.launchIosPlayer(streamUrl, title);
     } else {
-      // iOS / Web fallback: open URL directly
+      // Web fallback: open URL directly
       try {
-        const canOpen = await Linking.canOpenURL(`vlc://${streamUrl}`);
-        if (canOpen) {
-          await Linking.openURL(`vlc://${streamUrl}`);
-          return true;
-        }
         await Linking.openURL(streamUrl);
         return true;
       } catch (err: any) {
@@ -113,6 +129,88 @@ class VlcService {
         return false;
       }
     }
+  }
+
+  /**
+   * Launch external player on iOS via URL Schemes (VLC, Outplayer, Infuse)
+   */
+  private async launchIosPlayer(streamUrl: string, title: string): Promise<boolean> {
+    const cleanUrl = sanitizeStreamUrl(streamUrl);
+    const encodedUrl = encodeURIComponent(cleanUrl);
+
+    // 1. VLC for iOS (x-callback and direct)
+    const vlcCallbackUri = `vlc-x-callback://x-callback-url/stream?url=${encodedUrl}`;
+    const vlcDirectUri = `vlc://${cleanUrl.replace(/^https?:\/\//, '')}`;
+
+    // 2. Outplayer for iOS
+    const outplayerUri = `outplayer://${cleanUrl.replace(/^https?:\/\//, '')}`;
+
+    // 3. Infuse for iOS
+    const infuseUri = `infuse://x-callback-url/play?url=${encodedUrl}`;
+
+    try {
+      if (await Linking.canOpenURL(vlcCallbackUri)) {
+        console.log('[VLC] 🍎 Launching VLC for iOS (x-callback)');
+        await Linking.openURL(vlcCallbackUri);
+        return true;
+      }
+
+      if (await Linking.canOpenURL(vlcDirectUri)) {
+        console.log('[VLC] 🍎 Launching VLC for iOS (direct scheme)');
+        await Linking.openURL(vlcDirectUri);
+        return true;
+      }
+
+      if (await Linking.canOpenURL(outplayerUri)) {
+        console.log('[VLC] 🍎 Launching Outplayer for iOS');
+        await Linking.openURL(outplayerUri);
+        return true;
+      }
+
+      if (await Linking.canOpenURL(infuseUri)) {
+        console.log('[VLC] 🍎 Launching Infuse for iOS');
+        await Linking.openURL(infuseUri);
+        return true;
+      }
+    } catch (checkErr) {
+      console.warn('[VLC] ⚠️ iOS URL scheme probe failed:', checkErr);
+    }
+
+    return new Promise((resolve) => {
+      Alert.alert(
+        'VLC for iOS Recommended',
+        'VLC for Mobile (Free on App Store) is recommended for smooth 4K HDR playback with multi-audio & subtitles.',
+        [
+          {
+            text: 'Get VLC (Free)',
+            style: 'default',
+            onPress: async () => {
+              try {
+                await Linking.openURL('https://apps.apple.com/app/vlc-for-mobile/id650377962');
+              } catch {}
+              resolve(false);
+            },
+          },
+          {
+            text: 'Open in Safari',
+            style: 'default',
+            onPress: async () => {
+              try {
+                await Linking.openURL(cleanUrl);
+                resolve(true);
+              } catch {
+                resolve(false);
+              }
+            },
+          },
+          {
+            text: 'Cancel',
+            style: 'cancel',
+            onPress: () => resolve(false),
+          },
+        ]
+      );
+    });
   }
 
   private async launchAndroidIntent(

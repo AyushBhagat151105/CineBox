@@ -4,3 +4,5 @@ export * from './ProviderBadge';
 export * from './QualityBadge';
 export * from './ReleaseBadgeRow';
 export * from './TrailerPlayer';
+export * from './RewardedAdModal';
+export * from './UpdateModal';

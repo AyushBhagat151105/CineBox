@@ -1,0 +1,61 @@
+name: Release APK
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-android:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Setup Java JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build Android Release APK
+        env:
+          EXPO_PUBLIC_ENABLE_ADS: 'true'
+          EXPO_PUBLIC_MONETAG_ZONE_ID: '12155691'
+          EXPO_PUBLIC_MONETAG_DIRECT_URL: 'https://uplcm.com/4/12155691'
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a,armeabi-v7a
+
+      - name: Prepare Release Asset
+        run: |
+          TAG_NAME=${GITHUB_REF#refs/tags/}
+          mkdir -p output
+          cp android/app/build/outputs/apk/release/app-release.apk output/CineBox-${TAG_NAME}.apk
+          echo "Built APK: output/CineBox-${TAG_NAME}.apk"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: output/CineBox-*.apk
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

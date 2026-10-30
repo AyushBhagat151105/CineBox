@@ -1,11 +1,13 @@
 import { useFonts } from 'expo-font';
 import { DarkTheme, Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import 'react-native-reanimated';
 import { StatusBar } from 'expo-status-bar';
 import { useAppStore } from '@/store';
 import { THEME } from '@/constants';
+import { RewardedAdModal, UpdateModal } from '@/components';
+import { updaterService, UpdateInfo } from '@/services/updater';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -15,6 +17,7 @@ export default function RootLayout() {
   });
 
   const loadStorage = useAppStore((s) => s.loadStorage);
+  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
 
   useEffect(() => {
     if (error) throw error;
@@ -24,6 +27,10 @@ export default function RootLayout() {
     loadStorage();
     if (loaded) {
       SplashScreen.hideAsync();
+      // Silently check for GitHub OTA updates on app mount
+      updaterService.checkForUpdates().then((info) => {
+        if (info) setUpdateInfo(info);
+      });
     }
   }, [loaded]);
 
@@ -79,6 +86,12 @@ export default function RootLayout() {
           }}
         />
       </Stack>
+      <RewardedAdModal />
+      <UpdateModal
+        updateInfo={updateInfo}
+        visible={!!updateInfo}
+        onClose={() => setUpdateInfo(null)}
+      />
     </>
   );
 }

@@ -11,8 +11,12 @@ import {
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Constants from 'expo-constants';
 import { useAppStore } from '@/store';
 import { getActiveHDHub4uDomain } from '@/providers/hdhub4u/domain';
+import { adService, ADS_ENABLED } from '@/services/ads';
+import { updaterService, UpdateInfo } from '@/services/updater';
+import { UpdateModal } from '@/components';
 
 export default function SettingsScreen() {
   const router = useRouter();
@@ -29,10 +33,38 @@ export default function SettingsScreen() {
 
   const [hdhubDomain, setHdhubDomain] = useState<string>('Probing...');
   const [probing, setProbing] = useState<boolean>(true);
+  const [remainingAdMinutes, setRemainingAdMinutes] = useState<number>(0);
+  const [checkingUpdate, setCheckingUpdate] = useState<boolean>(false);
+  const [manualUpdateInfo, setManualUpdateInfo] = useState<UpdateInfo | null>(null);
 
   useEffect(() => {
     checkDomains();
+    checkAdStatus();
   }, []);
+
+  const checkAdStatus = async () => {
+    const mins = await adService.getRemainingUnlockMinutes();
+    setRemainingAdMinutes(mins);
+  };
+
+  const handleCheckUpdateManual = async () => {
+    setCheckingUpdate(true);
+    try {
+      const info = await updaterService.checkForUpdates();
+      if (info) {
+        setManualUpdateInfo(info);
+      } else {
+        Alert.alert(
+          'Up to Date',
+          `You are running the latest version of CineBox (v${Constants.expoConfig?.version || '1.0.0'}).`
+        );
+      }
+    } catch {
+      Alert.alert('Check Failed', 'Could not reach GitHub Releases. Please check your internet connection.');
+    } finally {
+      setCheckingUpdate(false);
+    }
+  };
 
   const checkDomains = async () => {
     setProbing(true);
@@ -188,6 +220,33 @@ export default function SettingsScreen() {
           </View>
         </View>
 
+        {/* Updates & Version Check */}
+        <View style={styles.section}>
+          <Text style={styles.sectionHeader}>UPDATES & DISTRIBUTION</Text>
+          <View style={styles.card}>
+            <TouchableOpacity
+              onPress={handleCheckUpdateManual}
+              style={styles.clickableRow}
+              activeOpacity={0.7}
+              disabled={checkingUpdate}>
+              <View style={[styles.iconBox, { backgroundColor: 'rgba(229, 9, 20, 0.12)' }]}>
+                {checkingUpdate ? (
+                  <ActivityIndicator size="small" color="#e50914" />
+                ) : (
+                  <Ionicons name="cloud-download-outline" size={18} color="#e50914" />
+                )}
+              </View>
+              <View style={styles.settingTextWrap}>
+                <Text style={styles.settingTitle}>Check for Updates</Text>
+                <Text style={styles.settingSubtitle}>
+                  Current version: v{Constants.expoConfig?.version || '1.0.0'} • GitHub Releases
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="#6b7280" />
+            </TouchableOpacity>
+          </View>
+        </View>
+
         {/* Privacy & Legal Architecture */}
         <View style={styles.section}>
           <Text style={styles.sectionHeader}>PRIVACY & TRANSPARENCY</Text>
@@ -250,17 +309,46 @@ export default function SettingsScreen() {
 
             <View style={styles.divider} />
 
-            {/* MovieBox */}
+            {/* Ad & Monetization Status */}
             <View style={styles.providerRow}>
               <View style={styles.providerLeft}>
-                <View style={[styles.statusDot, { backgroundColor: '#ef4444' }]} />
+                <View
+                  style={[
+                    styles.statusDot,
+                    {
+                      backgroundColor: !ADS_ENABLED ? '#f59e0b' : '#10b981',
+                    },
+                  ]}
+                />
                 <View>
-                  <Text style={styles.providerName}>MovieBox Multi-Host</Text>
-                  <Text style={styles.providerSub}>7 Hosts Pool • HMAC-MD5</Text>
+                  <Text style={styles.providerName}>
+                    {!ADS_ENABLED ? 'Creator VIP Mode' : 'Sponsor Network'}
+                  </Text>
+                  <Text style={styles.providerSub}>
+                    {!ADS_ENABLED
+                      ? 'Ad-Free Developer Build'
+                      : 'Active • Rewarded ad on video play'}
+                  </Text>
                 </View>
               </View>
-              <View style={[styles.pillBadge, { backgroundColor: 'rgba(16, 185, 129, 0.12)' }]}>
-                <Text style={[styles.pillBadgeText, { color: '#10b981' }]}>ONLINE</Text>
+              <View
+                style={[
+                  styles.pillBadge,
+                  {
+                    backgroundColor: !ADS_ENABLED
+                      ? 'rgba(245, 158, 11, 0.15)'
+                      : 'rgba(16, 185, 129, 0.12)',
+                  },
+                ]}>
+                <Text
+                  style={[
+                    styles.pillBadgeText,
+                    {
+                      color: !ADS_ENABLED ? '#f59e0b' : '#10b981',
+                    },
+                  ]}>
+                  {!ADS_ENABLED ? 'VIP' : 'ENABLED'}
+                </Text>
               </View>
             </View>
           </View>
@@ -313,10 +401,17 @@ export default function SettingsScreen() {
         </View>
 
         <View style={styles.aboutWrap}>
-          <Text style={styles.aboutTitle}>CineBox v1.0.0</Text>
+          <Text style={styles.aboutTitle}>
+            CineBox v{Constants.expoConfig?.version || '1.0.0'} {!ADS_ENABLED ? '👑 VIP' : ''}
+          </Text>
           <Text style={styles.aboutSub}>Engineered for pure cinematic playback.</Text>
         </View>
       </ScrollView>
+      <UpdateModal
+        updateInfo={manualUpdateInfo}
+        visible={!!manualUpdateInfo}
+        onClose={() => setManualUpdateInfo(null)}
+      />
     </View>
   );
 }
