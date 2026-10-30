@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
 
 jobs:
   build-android:
@@ -58,7 +59,12 @@ jobs:
 
       - name: Prepare Release Asset
         run: |
-          TAG_NAME=${GITHUB_REF#refs/tags/}
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            TAG_NAME=${GITHUB_REF#refs/tags/}
+          else
+            TAG_NAME="v1.0.1"
+          fi
+          echo "TAG_NAME=$TAG_NAME" >> $GITHUB_ENV
           mkdir -p output
           cp android/app/build/outputs/apk/release/app-release.apk output/CineBox-${TAG_NAME}.apk
           echo "Built APK: output/CineBox-${TAG_NAME}.apk"
@@ -66,6 +72,7 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ env.TAG_NAME }}
           files: output/CineBox-*.apk
           generate_release_notes: true
           draft: false
