@@ -1,11 +1,12 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
   Image,
   StyleSheet,
-  TouchableOpacity,
+  Pressable,
   Dimensions,
+  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { CatalogItem } from '@/types';
@@ -21,17 +22,20 @@ interface MovieCardProps {
 }
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const DEFAULT_WIDTH = (SCREEN_WIDTH - 48) / 3;
-const DEFAULT_HEIGHT = DEFAULT_WIDTH * 1.5;
+const isTV = Platform.isTV || SCREEN_WIDTH > 800;
+const DEFAULT_WIDTH = isTV ? 150 : Math.floor((SCREEN_WIDTH - 48) / 3);
+const DEFAULT_HEIGHT = Math.round(DEFAULT_WIDTH * 1.5);
 
 export const MovieCard: React.FC<MovieCardProps> = React.memo(({
   item,
   width = DEFAULT_WIDTH,
-  height = DEFAULT_HEIGHT,
+  height,
   showProviders = true,
 }) => {
   const router = useRouter();
+  const [isFocused, setIsFocused] = useState(false);
 
+  const cardHeight = height || Math.round(width * 1.48);
   const cleanedTitle = cleanDisplayTitle(item.title);
 
   const handlePress = () => {
@@ -49,11 +53,13 @@ export const MovieCard: React.FC<MovieCardProps> = React.memo(({
   };
 
   return (
-    <TouchableOpacity
-      activeOpacity={0.8}
+    <Pressable
+      focusable={true}
+      onFocus={() => setIsFocused(true)}
+      onBlur={() => setIsFocused(false)}
       onPress={handlePress}
-      style={[styles.container, { width }]}>
-      <View style={[styles.posterContainer, { height }]}>
+      style={[styles.container, { width }, isFocused && styles.containerFocused]}>
+      <View style={[styles.posterContainer, { height: cardHeight }, isFocused && styles.posterFocused]}>
         {item.posterUrl ? (
           <Image
             source={{ uri: item.posterUrl }}
@@ -80,7 +86,7 @@ export const MovieCard: React.FC<MovieCardProps> = React.memo(({
         )}
       </View>
 
-      <Text numberOfLines={1} style={styles.title}>
+      <Text numberOfLines={1} style={[styles.title, isFocused && styles.titleFocused]}>
         {cleanedTitle}
       </Text>
 
@@ -94,7 +100,7 @@ export const MovieCard: React.FC<MovieCardProps> = React.memo(({
           </View>
         )}
       </View>
-    </TouchableOpacity>
+    </Pressable>
   );
 });
 
@@ -102,6 +108,9 @@ const styles = StyleSheet.create({
   container: {
     marginRight: 12,
     marginBottom: 16,
+  },
+  containerFocused: {
+    zIndex: 10,
   },
   posterContainer: {
     borderRadius: 8,
@@ -113,6 +122,17 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 5,
     elevation: 4,
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  posterFocused: {
+    borderColor: '#e50914',
+    borderWidth: 3,
+    transform: [{ scale: 1.08 }],
+    shadowColor: '#e50914',
+    shadowOpacity: 0.9,
+    shadowRadius: 12,
+    elevation: 10,
   },
   poster: {
     width: '100%',
@@ -161,6 +181,10 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     marginTop: 6,
+  },
+  titleFocused: {
+    color: '#ffffff',
+    fontWeight: '800',
   },
   metaRow: {
     flexDirection: 'row',

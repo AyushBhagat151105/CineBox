@@ -12,7 +12,7 @@ import {
   Image,
   StyleSheet,
   Text,
-  TouchableOpacity,
+  Pressable,
   View,
 } from 'react-native';
 import { ProviderBadge } from './ProviderBadge';
@@ -123,12 +123,16 @@ export const ContinueWatchingCard: React.FC<ContinueWatchingCardProps> = React.m
 
   const timeLeft = Math.max(0, item.durationSeconds - item.positionSeconds);
 
+  const [isCardFocused, setIsCardFocused] = useState(false);
+
   return (
-    <TouchableOpacity
-      activeOpacity={0.88}
+    <Pressable
+      focusable={true}
+      onFocus={() => setIsCardFocused(true)}
+      onBlur={() => setIsCardFocused(false)}
       onPress={handleResume}
       onLongPress={handleLongPress}
-      style={styles.card}>
+      style={[styles.card, isCardFocused && styles.cardFocused]}>
       {/* 16:9 Widescreen Backdrop Banner */}
       <View style={styles.thumbnailContainer}>
         {imageUri ? (
@@ -188,7 +192,7 @@ export const ContinueWatchingCard: React.FC<ContinueWatchingCardProps> = React.m
           <ReleaseBadgeRow releaseName={item.releaseName} maxTags={3} />
         </View>
       </View>
-    </TouchableOpacity>
+    </Pressable>
   );
 });
 
@@ -199,13 +203,23 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     marginRight: 14,
     overflow: 'hidden',
-    borderWidth: 1,
+    borderWidth: 2,
     borderColor: '#1e212d',
     elevation: 3,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.35,
     shadowRadius: 6,
+  },
+  cardFocused: {
+    borderColor: '#e50914',
+    borderWidth: 3,
+    transform: [{ scale: 1.06 }],
+    shadowColor: '#e50914',
+    shadowOpacity: 0.9,
+    shadowRadius: 12,
+    elevation: 10,
+    zIndex: 10,
   },
   thumbnailContainer: {
     width: '100%',

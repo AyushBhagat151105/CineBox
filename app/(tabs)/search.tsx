@@ -5,10 +5,11 @@ import {
   TextInput,
   ScrollView,
   StyleSheet,
-  TouchableOpacity,
   ActivityIndicator,
   FlatList,
   Dimensions,
+  Platform,
+  Pressable,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -17,7 +18,16 @@ import { CatalogItem, MediaType, ProviderId } from '@/types';
 import { MovieCard } from '@/components';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const COLUMN_WIDTH = (SCREEN_WIDTH - 48) / 3;
+const isTV = Platform.isTV || SCREEN_WIDTH > 800;
+const TV_SIDEBAR_WIDTH = isTV ? 76 : 0;
+const CONTENT_WIDTH = SCREEN_WIDTH - TV_SIDEBAR_WIDTH;
+const NUM_COLUMNS = isTV ? 5 : 3;
+const CARD_SPACING = isTV ? 14 : 8;
+const HORIZONTAL_PADDING = isTV ? 20 : 16;
+const CARD_WIDTH = Math.floor(
+  (CONTENT_WIDTH - (HORIZONTAL_PADDING * 2) - (CARD_SPACING * (NUM_COLUMNS - 1))) / NUM_COLUMNS
+);
+const CARD_HEIGHT = Math.round(CARD_WIDTH * 1.48);
 
 type FilterProvider = 'all' | ProviderId;
 
@@ -28,6 +38,7 @@ export default function SearchScreen() {
   const [results, setResults] = useState<CatalogItem[]>([]);
   const [selectedProvider, setSelectedProvider] = useState<FilterProvider>('all');
   const [selectedType, setSelectedType] = useState<'all' | MediaType>('all');
+  const [focusedChip, setFocusedChip] = useState<string | null>(null);
   const debounceTimer = useRef<any>(null);
 
   const performSearch = useCallback(async (searchQuery: string) => {
@@ -86,54 +97,52 @@ export default function SearchScreen() {
             onSubmitEditing={() => performSearch(query)}
           />
           {query.length > 0 && (
-            <TouchableOpacity onPress={() => handleQueryChange('')}>
+            <Pressable onPress={() => handleQueryChange('')}>
               <Ionicons name="close-circle" size={18} color="#888899" />
-            </TouchableOpacity>
+            </Pressable>
           )}
         </View>
       </View>
 
       {/* Provider Filter Chips */}
       <View style={styles.filterRow}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterScroll}>
-          <TouchableOpacity
-            style={[styles.filterChip, selectedProvider === 'all' && styles.filterChipActive]}
-            onPress={() => setSelectedProvider('all')}>
-            <Text style={[styles.filterText, selectedProvider === 'all' && styles.filterTextActive]}>
-              All Sources
-            </Text>
-          </TouchableOpacity>
+        <FlatList
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filterScroll}
+          data={[
+            { id: 'all', label: 'All Sources', activeStyle: styles.filterChipActive, textActive: styles.filterTextActive },
+            { id: 'hdhub4u', label: 'HDHub4u (Bollywood)', activeStyle: styles.filterChipActiveHdhub, textActive: styles.filterTextHdhub },
+            { id: 'fourkhdhub', label: '4KHDHub (2160p)', activeStyle: styles.filterChipActive4k, textActive: styles.filterText4k },
+          ]}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => {
+            const active = selectedProvider === item.id;
+            const isFocused = focusedChip === item.id;
 
-          <TouchableOpacity
-            style={[
-              styles.filterChip,
-              selectedProvider === 'hdhub4u' && styles.filterChipActiveHdhub,
-            ]}
-            onPress={() => setSelectedProvider('hdhub4u')}>
-            <Text
-              style={[
-                styles.filterText,
-                selectedProvider === 'hdhub4u' && styles.filterTextHdhub,
-              ]}>
-              HDHub4u (Bollywood)
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.filterChip,
-              selectedProvider === 'fourkhdhub' && styles.filterChipActive4k,
-            ]}
-            onPress={() => setSelectedProvider('fourkhdhub')}>
-            <Text
-              style={[
-                styles.filterText,
-                selectedProvider === 'fourkhdhub' && styles.filterText4k,
-              ]}>
-              4KHDHub (2160p)
-            </Text>
-          </TouchableOpacity>
-        </ScrollView>
+            return (
+              <Pressable
+                focusable={true}
+                onFocus={() => setFocusedChip(item.id)}
+                onBlur={() => setFocusedChip((prev) => (prev === item.id ? null : prev))}
+                style={[
+                  styles.filterChip,
+                  active && item.activeStyle,
+                  isFocused && styles.filterChipFocused,
+                ]}
+                onPress={() => setSelectedProvider(item.id as FilterProvider)}>
+                <Text
+                  style={[
+                    styles.filterText,
+                    active && item.textActive,
+                    isFocused && styles.filterTextFocused,
+                  ]}>
+                  {item.label}
+                </Text>
+              </Pressable>
+            );
+          }}
+        />
       </View>
 
       {/* Content Area */}
@@ -144,16 +153,18 @@ export default function SearchScreen() {
         </View>
       ) : filteredResults.length > 0 ? (
         <FlatList
+          key={`search-grid-${NUM_COLUMNS}`}
           data={filteredResults}
           keyExtractor={(item, index) => `${item.id.provider}_${item.id.value}_${index}`}
-          numColumns={3}
+          numColumns={NUM_COLUMNS}
+          columnWrapperStyle={styles.columnWrapper}
           contentContainerStyle={styles.gridContent}
-          initialNumToRender={9}
-          maxToRenderPerBatch={9}
+          initialNumToRender={NUM_COLUMNS * 2}
+          maxToRenderPerBatch={NUM_COLUMNS * 2}
           windowSize={5}
           removeClippedSubviews
           renderItem={({ item }) => (
-            <MovieCard item={item} width={COLUMN_WIDTH} height={COLUMN_WIDTH * 1.5} />
+            <MovieCard item={item} width={CARD_WIDTH} height={CARD_HEIGHT} />
           )}
         />
       ) : query.length > 0 ? (
@@ -233,6 +244,13 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(239, 68, 68, 0.2)',
     borderColor: '#ef4444',
   },
+  filterChipFocused: {
+    borderColor: '#ffffff',
+    borderWidth: 2,
+    backgroundColor: '#e50914',
+    transform: [{ scale: 1.1 }],
+    elevation: 6,
+  },
   filterText: {
     color: '#8e8e9e',
     fontSize: 12,
@@ -240,6 +258,10 @@ const styles = StyleSheet.create({
   },
   filterTextActive: {
     color: '#000000',
+  },
+  filterTextFocused: {
+    color: '#ffffff',
+    fontWeight: '800',
   },
   filterTextHdhub: {
     color: '#10b981',
@@ -251,9 +273,14 @@ const styles = StyleSheet.create({
     color: '#ef4444',
   },
   gridContent: {
-    paddingHorizontal: 16,
+    paddingHorizontal: HORIZONTAL_PADDING,
     paddingTop: 16,
     paddingBottom: 40,
+  },
+  columnWrapper: {
+    justifyContent: 'flex-start',
+    gap: CARD_SPACING,
+    marginBottom: 12,
   },
   centerContainer: {
     flex: 1,

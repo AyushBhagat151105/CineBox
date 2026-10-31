@@ -10,6 +10,8 @@ import {
   ActivityIndicator,
   Image,
   Dimensions,
+  Platform,
+  Pressable,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -21,9 +23,15 @@ import { useAppStore } from '@/store';
 import { cleanMovieTitle, cleanDisplayTitle } from '@/utils';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const CARD_SPACING = 8;
-const HORIZONTAL_PADDING = 12;
-const CARD_WIDTH = Math.floor((SCREEN_WIDTH - (HORIZONTAL_PADDING * 2) - (CARD_SPACING * 2)) / 3);
+const isTV = Platform.isTV || SCREEN_WIDTH > 800;
+const TV_SIDEBAR_WIDTH = isTV ? 76 : 0;
+const CONTENT_WIDTH = SCREEN_WIDTH - TV_SIDEBAR_WIDTH;
+const NUM_COLUMNS = isTV ? 5 : 3;
+const CARD_SPACING = isTV ? 14 : 8;
+const HORIZONTAL_PADDING = isTV ? 20 : 12;
+const CARD_WIDTH = Math.floor(
+  (CONTENT_WIDTH - (HORIZONTAL_PADDING * 2) - (CARD_SPACING * (NUM_COLUMNS - 1))) / NUM_COLUMNS
+);
 
 export type HomeCategory =
   | 'all'
@@ -79,6 +87,12 @@ export default function HomeScreen() {
   // Filter States
   const [selectedCategory, setSelectedCategory] = useState<HomeCategory>('all');
   const [selectedGenre, setSelectedGenre] = useState<GenreFilter>('all');
+
+  // TV Remote Focus States
+  const [focusedCat, setFocusedCat] = useState<string | null>(null);
+  const [focusedGenre, setFocusedGenre] = useState<string | null>(null);
+  const [focusedSearch, setFocusedSearch] = useState(false);
+  const [focusedHero, setFocusedHero] = useState(false);
 
   // Content & Pagination States
   const [catalogItems, setCatalogItems] = useState<CatalogItem[]>([]);
@@ -184,7 +198,11 @@ export default function HomeScreen() {
   const renderGridItem = useCallback(
     ({ item }: { item: CatalogItem }) => (
       <View style={{ width: CARD_WIDTH }}>
-        <MovieCard item={item} width={CARD_WIDTH} />
+        <MovieCard
+          item={item}
+          width={CARD_WIDTH}
+          height={Math.round(CARD_WIDTH * 1.48)}
+        />
       </View>
     ),
     []
@@ -198,48 +216,70 @@ export default function HomeScreen() {
       <View style={styles.headerContainer}>
         {/* Category Selector Pills */}
         <View style={styles.categoriesSection}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.pillsScroll}>
-            {CATEGORIES.map((cat) => {
+          <FlatList
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.pillsScroll}
+            data={CATEGORIES}
+            keyExtractor={(cat) => cat.id}
+            renderItem={({ item: cat }) => {
               const active = selectedCategory === cat.id;
+              const isFocused = focusedCat === cat.id;
               return (
-                <TouchableOpacity
-                  key={cat.id}
-                  style={[styles.categoryPill, active && styles.categoryPillActive]}
-                  onPress={() => setSelectedCategory(cat.id)}
-                  activeOpacity={0.75}>
+                <Pressable
+                  focusable={true}
+                  onFocus={() => setFocusedCat(cat.id)}
+                  onBlur={() => setFocusedCat((prev) => (prev === cat.id ? null : prev))}
+                  style={[
+                    styles.categoryPill,
+                    active && styles.categoryPillActive,
+                    isFocused && styles.categoryPillFocused,
+                  ]}
+                  onPress={() => setSelectedCategory(cat.id)}>
                   <Ionicons
                     name={cat.icon}
                     size={14}
-                    color={active ? '#ffffff' : '#94a3b8'}
+                    color={active || isFocused ? '#ffffff' : '#94a3b8'}
                     style={{ marginRight: 5 }}
                   />
-                  <Text style={[styles.categoryPillText, active && styles.categoryPillTextActive]}>
+                  <Text style={[styles.categoryPillText, (active || isFocused) && styles.categoryPillTextActive]}>
                     {cat.label}
                   </Text>
-                </TouchableOpacity>
+                </Pressable>
               );
-            })}
-          </ScrollView>
+            }}
+          />
         </View>
 
         {/* Secondary Genre Sub-Filters */}
         <View style={styles.genresSection}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.pillsScroll}>
-            {GENRES.map((g) => {
+          <FlatList
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.pillsScroll}
+            data={GENRES}
+            keyExtractor={(g) => g.id}
+            renderItem={({ item: g }) => {
               const active = selectedGenre === g.id;
+              const isFocused = focusedGenre === g.id;
               return (
-                <TouchableOpacity
-                  key={g.id}
-                  style={[styles.genreChip, active && styles.genreChipActive]}
-                  onPress={() => setSelectedGenre(g.id)}
-                  activeOpacity={0.75}>
-                  <Text style={[styles.genreChipText, active && styles.genreChipTextActive]}>
+                <Pressable
+                  focusable={true}
+                  onFocus={() => setFocusedGenre(g.id)}
+                  onBlur={() => setFocusedGenre((prev) => (prev === g.id ? null : prev))}
+                  style={[
+                    styles.genreChip,
+                    active && styles.genreChipActive,
+                    isFocused && styles.genreChipFocused,
+                  ]}
+                  onPress={() => setSelectedGenre(g.id)}>
+                  <Text style={[styles.genreChipText, (active || isFocused) && styles.genreChipTextActive]}>
                     {g.label}
                   </Text>
-                </TouchableOpacity>
+                </Pressable>
               );
-            })}
-          </ScrollView>
+            }}
+          />
         </View>
 
         {/* MODE A ONLY: Continue Watching, Hero Spotlight, and Curated Carousels */}
@@ -278,15 +318,17 @@ export default function HomeScreen() {
                   year={featuredItem.year}
                   posterUrl={featuredItem.posterUrl}
                   backdropUrl={featuredItem.backdropUrl || featuredItem.posterUrl}
-                  height={230}
-                  width={SCREEN_WIDTH - 24}
+                  height={isTV ? 260 : 230}
+                  width={CONTENT_WIDTH - (HORIZONTAL_PADDING * 2)}
                   borderRadius={12}
                   isActive={true}
                   autoPlayDelay={1500}
                   showSoundToggle={true}>
-                  <TouchableOpacity
-                    activeOpacity={0.92}
-                    style={styles.heroBannerTouch}
+                  <Pressable
+                    focusable={true}
+                    onFocus={() => setFocusedHero(true)}
+                    onBlur={() => setFocusedHero(false)}
+                    style={[styles.heroBannerTouch, focusedHero && styles.heroBannerFocused]}
                     onPress={() =>
                       router.push({
                         pathname: '/details',
@@ -318,13 +360,13 @@ export default function HomeScreen() {
                       </Text>
 
                       <View style={styles.heroActionRow}>
-                        <View style={styles.heroPlayButton}>
-                          <Ionicons name="play" size={17} color="#000000" />
-                          <Text style={styles.heroPlayText}>Watch Now</Text>
+                        <View style={[styles.heroPlayButton, focusedHero && styles.heroPlayButtonFocused]}>
+                          <Ionicons name="play" size={17} color={focusedHero ? '#ffffff' : '#000000'} />
+                          <Text style={[styles.heroPlayText, focusedHero && styles.heroPlayTextFocused]}>Watch Now</Text>
                         </View>
                       </View>
                     </View>
-                  </TouchableOpacity>
+                  </Pressable>
                 </TrailerPlayer>
               </View>
             )}
@@ -344,7 +386,13 @@ export default function HomeScreen() {
                   showsHorizontalScrollIndicator={false}
                   contentContainerStyle={styles.horizontalList}
                   data={curated4k}
-                  renderItem={({ item }) => <MovieCard item={item} />}
+                  renderItem={({ item }) => (
+                    <MovieCard
+                      item={item}
+                      width={isTV ? 150 : 115}
+                      height={isTV ? 222 : 170}
+                    />
+                  )}
                   keyExtractor={keyExtractor}
                   initialNumToRender={4}
                   maxToRenderPerBatch={4}
@@ -369,7 +417,13 @@ export default function HomeScreen() {
                   showsHorizontalScrollIndicator={false}
                   contentContainerStyle={styles.horizontalList}
                   data={curatedBollywood}
-                  renderItem={({ item }) => <MovieCard item={item} />}
+                  renderItem={({ item }) => (
+                    <MovieCard
+                      item={item}
+                      width={isTV ? 150 : 115}
+                      height={isTV ? 222 : 170}
+                    />
+                  )}
                   keyExtractor={keyExtractor}
                   initialNumToRender={4}
                   maxToRenderPerBatch={4}
@@ -413,6 +467,9 @@ export default function HomeScreen() {
     curated4k,
     curatedBollywood,
     catalogItems.length,
+    focusedCat,
+    focusedGenre,
+    focusedHero,
     continueWatchingKeyExtractor,
     keyExtractor,
     router,
@@ -450,12 +507,14 @@ export default function HomeScreen() {
         </View>
 
         <View style={styles.headerRight}>
-          <TouchableOpacity
-            style={styles.searchButton}
-            onPress={() => router.push('/(tabs)/search')}
-            activeOpacity={0.7}>
+          <Pressable
+            focusable={true}
+            onFocus={() => setFocusedSearch(true)}
+            onBlur={() => setFocusedSearch(false)}
+            style={[styles.searchButton, focusedSearch && styles.searchButtonFocused]}
+            onPress={() => router.push('/(tabs)/search')}>
             <Ionicons name="search" size={20} color="#ffffff" />
-          </TouchableOpacity>
+          </Pressable>
         </View>
       </View>
 
@@ -468,10 +527,11 @@ export default function HomeScreen() {
       ) : (
         <FlatList
           ref={flatListRef}
+          key={`grid_${NUM_COLUMNS}`}
           data={catalogItems}
           keyExtractor={keyExtractor}
           renderItem={renderGridItem}
-          numColumns={3}
+          numColumns={NUM_COLUMNS}
           columnWrapperStyle={styles.columnWrapper}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
@@ -537,6 +597,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#181824',
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  searchButtonFocused: {
+    backgroundColor: '#e50914',
+    borderColor: '#ffffff',
+    transform: [{ scale: 1.15 }],
   },
   headerContainer: {
     paddingBottom: 8,
@@ -566,6 +633,16 @@ const styles = StyleSheet.create({
     backgroundColor: '#e50914',
     borderColor: '#e50914',
   },
+  categoryPillFocused: {
+    borderColor: '#ffffff',
+    borderWidth: 2.5,
+    backgroundColor: '#e50914',
+    transform: [{ scale: 1.12 }],
+    shadowColor: '#e50914',
+    shadowOpacity: 0.9,
+    shadowRadius: 10,
+    elevation: 10,
+  },
   categoryPillText: {
     color: '#94a3b8',
     fontSize: 12.5,
@@ -586,6 +663,16 @@ const styles = StyleSheet.create({
   genreChipActive: {
     backgroundColor: '#2563eb',
     borderColor: '#3b82f6',
+  },
+  genreChipFocused: {
+    borderColor: '#ffffff',
+    borderWidth: 2.5,
+    backgroundColor: '#1d4ed8',
+    transform: [{ scale: 1.15 }],
+    shadowColor: '#3b82f6',
+    shadowOpacity: 0.9,
+    shadowRadius: 10,
+    elevation: 8,
   },
   genreChipText: {
     color: '#717182',
@@ -631,7 +718,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   heroBannerContainer: {
-    marginHorizontal: 12,
+    marginHorizontal: HORIZONTAL_PADDING,
     marginTop: 6,
     marginBottom: 18,
     borderRadius: 12,
@@ -643,6 +730,17 @@ const styles = StyleSheet.create({
   heroBannerTouch: {
     ...StyleSheet.absoluteFill,
     justifyContent: 'flex-end',
+    borderWidth: 3,
+    borderColor: 'transparent',
+    borderRadius: 12,
+  },
+  heroBannerFocused: {
+    borderColor: '#e50914',
+    transform: [{ scale: 1.02 }],
+    shadowColor: '#e50914',
+    shadowOpacity: 0.9,
+    shadowRadius: 16,
+    elevation: 12,
   },
   heroOverlay: {
     padding: 16,
@@ -701,10 +799,16 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     gap: 6,
   },
+  heroPlayButtonFocused: {
+    backgroundColor: '#e50914',
+  },
   heroPlayText: {
     color: '#000000',
     fontSize: 13,
     fontWeight: '800',
+  },
+  heroPlayTextFocused: {
+    color: '#ffffff',
   },
   gridHeaderRow: {
     flexDirection: 'row',

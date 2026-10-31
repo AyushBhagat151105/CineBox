@@ -17,6 +17,7 @@ import {
   Dimensions,
   StyleProp,
   ViewStyle,
+  Platform,
 } from 'react-native';
 import YoutubePlayer, {
   PLAYER_STATES,
@@ -47,6 +48,7 @@ export interface TrailerPlayerProps {
 }
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const isTVDevice = Platform.isTV || SCREEN_WIDTH > 800;
 
 export const TrailerPlayer = forwardRef<TrailerPlayerRef, TrailerPlayerProps>(
   (
@@ -77,8 +79,9 @@ export const TrailerPlayer = forwardRef<TrailerPlayerRef, TrailerPlayerProps>(
     const timerRef = useRef<any>(null);
     const imageSource = backdropUrl || posterUrl;
 
-    // 1. Resolve trailer video ID
+    // 1. Resolve trailer video ID (bypassed on TV to guarantee 60fps performance on FireStick)
     useEffect(() => {
+      if (isTVDevice) return;
       let isCancelled = false;
       setVideoId(null);
       setIsTrailerReady(false);
@@ -171,8 +174,8 @@ export const TrailerPlayer = forwardRef<TrailerPlayerRef, TrailerPlayerProps>(
           />
         )}
 
-        {/* Embedded YouTube Player (100% full brightness, unshaded) */}
-        {videoId && !hasError && (
+        {/* Embedded YouTube Player (Only active on mobile devices, skipped on TV to prevent 1GB RAM starvation) */}
+        {!isTVDevice && videoId && !hasError && (
           <View
             style={[
               styles.videoContainer,
@@ -209,7 +212,7 @@ export const TrailerPlayer = forwardRef<TrailerPlayerRef, TrailerPlayerProps>(
         {children}
 
         {/* Bottom HUD Controls (Netflix/Apple TV+ style: clean bottom-aligned, no top status bar collision) */}
-        {videoId && !hasError && showSoundToggle && (
+        {!isTVDevice && videoId && !hasError && showSoundToggle && (
           <View style={styles.bottomControls} pointerEvents="box-none">
             {/* Trailer Playing Indicator Pill (Bottom Left) */}
             {isTrailerReady && isPlaying ? (

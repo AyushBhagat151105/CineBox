@@ -1,28 +1,37 @@
 import React from 'react';
+import { View, StyleSheet, Platform, Dimensions } from 'react-native';
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { Platform } from 'react-native';
+import { TVSidebar } from '@/components';
 
 export default function TabLayout() {
+  const { width } = Dimensions.get('window');
+  const isTV = Platform.isTV || width > 800;
+
   return (
-    <Tabs
-      screenOptions={{
-        headerShown: false,
-        tabBarActiveTintColor: '#e50914',
-        tabBarInactiveTintColor: '#8a8a9e',
-        tabBarStyle: {
-          backgroundColor: '#0d0d12',
-          borderTopColor: '#1a1a24',
-          borderTopWidth: 1,
-          height: Platform.OS === 'ios' ? 88 : 64,
-          paddingBottom: Platform.OS === 'ios' ? 28 : 10,
-          paddingTop: 8,
-        },
-        tabBarLabelStyle: {
-          fontSize: 11,
-          fontWeight: '600',
-        },
-      }}>
+    <View style={styles.rootContainer}>
+      {isTV && <TVSidebar />}
+      <View style={styles.contentArea}>
+        <Tabs
+          screenOptions={{
+            headerShown: false,
+            tabBarActiveTintColor: '#e50914',
+            tabBarInactiveTintColor: '#8a8a9e',
+            tabBarStyle: isTV
+              ? { display: 'none' }
+              : {
+                  backgroundColor: '#0d0d12',
+                  borderTopColor: '#1a1a24',
+                  borderTopWidth: 1,
+                  height: Platform.OS === 'ios' ? 88 : 64,
+                  paddingBottom: Platform.OS === 'ios' ? 28 : 10,
+                  paddingTop: 8,
+                },
+            tabBarLabelStyle: {
+              fontSize: 11,
+              fontWeight: '600',
+            },
+          }}>
       <Tabs.Screen
         name="index"
         options={{
@@ -76,5 +85,18 @@ export default function TabLayout() {
         }}
       />
     </Tabs>
+      </View>
+    </View>
   );
 }
+
+const styles = StyleSheet.create({
+  rootContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    backgroundColor: '#0a0a0f',
+  },
+  contentArea: {
+    flex: 1,
+  },
+});

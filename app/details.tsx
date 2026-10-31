@@ -6,6 +6,7 @@ import {
   Image,
   StyleSheet,
   TouchableOpacity,
+  Pressable,
   ActivityIndicator,
   Dimensions,
   Alert,
@@ -66,6 +67,12 @@ export default function DetailsScreen() {
   const [selectedQuality, setSelectedQuality] = useState<string>('all');
   const [selectedSeason, setSelectedSeason] = useState<number | 'packs' | 'all'>('all');
   const [selectedEpisode, setSelectedEpisode] = useState<number | 'all'>('all');
+
+  // TV Remote Focus States
+  const [focusedQuickPlay, setFocusedQuickPlay] = useState(false);
+  const [focusedFav, setFocusedFav] = useState(false);
+  const [focusedQuality, setFocusedQuality] = useState<string | null>(null);
+  const [focusedRel, setFocusedRel] = useState<string | null>(null);
 
   // Load media and releases once per unique (provider, mediaId)
   useEffect(() => {
@@ -401,15 +408,18 @@ export default function DetailsScreen() {
 
           {/* Action Row: Quick Play & Watch Trailer */}
           <View style={styles.actionRowContainer}>
-            <TouchableOpacity
+            <Pressable
+              focusable={true}
+              onFocus={() => setFocusedQuickPlay(true)}
+              onBlur={() => setFocusedQuickPlay(false)}
               style={[
                 styles.quickPlayBtn,
                 isWatched && styles.watchedPlayBtn,
                 releases.length === 0 && styles.disabledBtn,
+                focusedQuickPlay && styles.quickPlayBtnFocused,
               ]}
               onPress={handleQuickPlay}
-              disabled={releases.length === 0 || resolvingRelease !== null}
-              activeOpacity={0.8}>
+              disabled={releases.length === 0 || resolvingRelease !== null}>
               {resolvingRelease === 'quick_play' ? (
                 <ActivityIndicator color="#ffffff" size="small" />
               ) : (
@@ -451,15 +461,17 @@ export default function DetailsScreen() {
                   />
                 </View>
               )}
-            </TouchableOpacity>
+            </Pressable>
 
-            <TouchableOpacity
-              style={styles.trailerActionBtn}
-              onPress={() => trailerRef.current?.openFullscreen()}
-              activeOpacity={0.75}>
+            <Pressable
+              focusable={true}
+              onFocus={() => setFocusedFav(true)}
+              onBlur={() => setFocusedFav(false)}
+              style={[styles.trailerActionBtn, focusedFav && styles.trailerActionBtnFocused]}
+              onPress={() => trailerRef.current?.openFullscreen()}>
               <Ionicons name="film-outline" size={18} color="#ffffff" />
               <Text style={styles.trailerActionText}>Trailer</Text>
-            </TouchableOpacity>
+            </Pressable>
           </View>
 
           {/* Overview */}
@@ -640,13 +652,21 @@ export default function DetailsScreen() {
                 const isResolving = resolvingRelease === rel.filename;
                 const isDual = /dual|hindi/i.test(rel.filename);
 
+                const relKey = `${rel.provider}_${index}`;
+                const isRelFocused = focusedRel === relKey;
+
                 return (
-                  <TouchableOpacity
-                    key={`${rel.provider}_${index}`}
-                    style={styles.releaseCard}
+                  <Pressable
+                    key={relKey}
+                    focusable={true}
+                    onFocus={() => setFocusedRel(relKey)}
+                    onBlur={() => setFocusedRel((p) => (p === relKey ? null : p))}
+                    style={[
+                      styles.releaseCard,
+                      isRelFocused && styles.releaseCardFocused,
+                    ]}
                     onPress={() => handlePlayRelease(rel)}
-                    disabled={resolvingRelease !== null}
-                    activeOpacity={0.75}>
+                    disabled={resolvingRelease !== null}>
                     <View style={styles.releaseTop}>
                       <View style={styles.releaseBadges}>
                         <QualityBadge quality={rel.quality} isDualAudio={isDual} />
@@ -667,7 +687,7 @@ export default function DetailsScreen() {
                       <ReleaseBadgeRow releaseName={rel.releaseName || rel.filename} maxTags={5} />
                     </View>
 
-                    <Text numberOfLines={2} style={styles.releaseFilename}>
+                    <Text numberOfLines={2} style={[styles.releaseFilename, isRelFocused && styles.releaseFilenameFocused]}>
                       {rel.filename}
                     </Text>
 
@@ -678,13 +698,13 @@ export default function DetailsScreen() {
                       {isResolving ? (
                         <ActivityIndicator size="small" color="#e50914" />
                       ) : (
-                        <View style={styles.playLink}>
-                          <Text style={styles.playLinkText}>STREAM</Text>
-                          <Ionicons name="chevron-forward" size={14} color="#e50914" />
+                        <View style={[styles.playLink, isRelFocused && styles.playLinkFocused]}>
+                          <Text style={[styles.playLinkText, isRelFocused && styles.playLinkTextFocused]}>STREAM</Text>
+                          <Ionicons name="chevron-forward" size={14} color={isRelFocused ? '#ffffff' : '#e50914'} />
                         </View>
                       )}
                     </View>
-                  </TouchableOpacity>
+                  </Pressable>
                 );
               })
             ) : (
@@ -817,6 +837,17 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     overflow: 'hidden',
     position: 'relative',
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  quickPlayBtnFocused: {
+    borderColor: '#ffffff',
+    borderWidth: 3,
+    transform: [{ scale: 1.04 }],
+    elevation: 8,
+    shadowColor: '#ffffff',
+    shadowOpacity: 0.8,
+    shadowRadius: 10,
   },
   trailerActionBtn: {
     flexDirection: 'row',
@@ -827,8 +858,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 14,
     borderRadius: 8,
-    borderWidth: 1,
+    borderWidth: 2,
     borderColor: 'rgba(255, 255, 255, 0.15)',
+  },
+  trailerActionBtnFocused: {
+    borderColor: '#e50914',
+    borderWidth: 2.5,
+    backgroundColor: '#281b1f',
+    transform: [{ scale: 1.05 }],
+    elevation: 6,
   },
   trailerActionText: {
     color: '#ffffff',
@@ -1040,8 +1078,18 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 12,
     marginBottom: 10,
-    borderWidth: 1,
+    borderWidth: 2,
     borderColor: '#202030',
+  },
+  releaseCardFocused: {
+    borderColor: '#e50914',
+    borderWidth: 2.5,
+    backgroundColor: '#1c1c28',
+    transform: [{ scale: 1.02 }],
+    shadowColor: '#e50914',
+    shadowOpacity: 0.8,
+    shadowRadius: 10,
+    elevation: 8,
   },
   releaseTop: {
     flexDirection: 'row',
@@ -1068,6 +1116,10 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginBottom: 8,
   },
+  releaseFilenameFocused: {
+    color: '#ffffff',
+    fontWeight: '800',
+  },
   releaseBottom: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1082,11 +1134,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 2,
   },
+  playLinkFocused: {
+    backgroundColor: '#e50914',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 4,
+  },
   playLinkText: {
     color: '#e50914',
     fontSize: 11,
     fontWeight: '800',
     letterSpacing: 0.5,
+  },
+  playLinkTextFocused: {
+    color: '#ffffff',
+    fontWeight: '800',
   },
   noReleases: {
     paddingVertical: 24,
