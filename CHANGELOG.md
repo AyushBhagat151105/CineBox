@@ -15,6 +15,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.1.1] - 2026-10-31
+
+### 🚀 Highlights
+- **In-App Package Installer Fix**:
+  - **Permission Declaration**: Added `<uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>` and Android 11+ `<queries>` package archive filters to prevent Android OS (API 26-35) from silently dropping installer intents.
+  - **Persistent Installation Modal**: Fixed premature modal auto-dismissal; replaced with an interactive **"Ready to Install"** state with direct installation retry.
+  - **Permission Settings Shortcut**: Added a one-tap shortcut to open Android's **"Install unknown apps"** settings (`android.settings.MANAGE_UNKNOWN_APP_SOURCES`) if installation is blocked.
+  - **Local APK Caching**: Added file verification to avoid redundant 65MB re-downloads when an APK was already fetched.
+
+---
+
 ## [v1.1.0] - 2026-10-31
 
 ### 🚀 Highlights

@@ -12,6 +12,7 @@ export interface UpdateInfo {
   releaseNotes: string;
   downloadUrl: string;
   apkSizeMb?: number;
+  apkSizeBytes?: number;
 }
 
 export type UpdateProgressListener = (progress: number) => void;
@@ -77,6 +78,7 @@ class UpdaterService {
         releaseNotes: release.body || 'Performance improvements and bug fixes.',
         downloadUrl: apkAsset.browser_download_url,
         apkSizeMb: apkAsset.size ? Math.round((apkAsset.size / (1024 * 1024)) * 10) / 10 : undefined,
+        apkSizeBytes: apkAsset.size,
       };
 
       console.log(`[Updater] 🚀 New update found: v${updateInfo.version} (${updateInfo.apkSizeMb || '?'} MB)`);
@@ -84,6 +86,138 @@ class UpdaterService {
     } catch (err: any) {
       console.warn('[Updater] Check failed:', err?.message || err);
       return null;
+    }
+  }
+
+  /**
+   * Local file path for downloaded APK
+   */
+  getApkPath(version: string): string {
+    return `${FileSystem.cacheDirectory}CineBox-${version}.apk`;
+  }
+
+  /**
+   * Checks if an APK for the specified version has already been fully downloaded
+   */
+  async isApkAlreadyDownloaded(version: string, expectedSizeBytes?: number): Promise<boolean> {
+    if (Platform.OS !== 'android') return false;
+    try {
+      const destinationUri = this.getApkPath(version);
+      const info = await FileSystem.getInfoAsync(destinationUri);
+      if (!info.exists || info.isDirectory) return false;
+
+      if (expectedSizeBytes && expectedSizeBytes > 0) {
+        return info.size === expectedSizeBytes || Math.abs(info.size - expectedSizeBytes) < 2048;
+      }
+      return (info.size ?? 0) > 10 * 1024 * 1024; // > 10MB sanity check
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Downloads APK with progress reporting (skips if already downloaded)
+   */
+  async downloadApk(
+    updateInfo: UpdateInfo,
+    onProgress?: UpdateProgressListener
+  ): Promise<string> {
+    const destinationUri = this.getApkPath(updateInfo.version);
+
+    const alreadyDownloaded = await this.isApkAlreadyDownloaded(
+      updateInfo.version,
+      updateInfo.apkSizeBytes
+    );
+    if (alreadyDownloaded) {
+      console.log(`[Updater] ⚡ Cached APK found at ${destinationUri}, skipping re-download!`);
+      onProgress?.(1);
+      return destinationUri;
+    }
+
+    console.log(`[Updater] 📥 Downloading APK from: ${updateInfo.downloadUrl}`);
+    const downloadResumable = FileSystem.createDownloadResumable(
+      updateInfo.downloadUrl,
+      destinationUri,
+      {},
+      (downloadProgress) => {
+        const total = downloadProgress.totalBytesExpectedToWrite;
+        const written = downloadProgress.totalBytesWritten;
+        if (total > 0 && onProgress) {
+          onProgress(Math.min(1, written / total));
+        }
+      }
+    );
+
+    const downloadResult = await downloadResumable.downloadAsync();
+    if (!downloadResult || !downloadResult.uri) {
+      throw new Error('APK download incomplete');
+    }
+
+    console.log(`[Updater] 📦 Downloaded APK to: ${downloadResult.uri}`);
+    return downloadResult.uri;
+  }
+
+  /**
+   * Dispatches Intent to open the Android Package Installer for the specified version
+   */
+  async launchInstaller(version: string): Promise<boolean> {
+    if (Platform.OS !== 'android') return false;
+
+    const fileUri = this.getApkPath(version);
+    const info = await FileSystem.getInfoAsync(fileUri);
+    if (!info.exists) {
+      throw new Error('APK file not found on device');
+    }
+
+    // Convert file URI to Android content URI using FileProvider
+    const contentUri = await FileSystem.getContentUriAsync(fileUri);
+    console.log(`[Updater] 🚀 Launching Android Package Installer for: ${contentUri}`);
+
+    // FLAG_GRANT_READ_URI_PERMISSION (1) | FLAG_ACTIVITY_NEW_TASK (268435456)
+    const flags = 0x10000001;
+
+    try {
+      await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
+        data: contentUri,
+        type: 'application/vnd.android.package-archive',
+        flags,
+      });
+      return true;
+    } catch (viewErr: any) {
+      console.warn('[Updater] VIEW intent failed, trying INSTALL_PACKAGE fallback:', viewErr?.message);
+      try {
+        await IntentLauncher.startActivityAsync('android.intent.action.INSTALL_PACKAGE', {
+          data: contentUri,
+          flags,
+        });
+        return true;
+      } catch (fallbackErr: any) {
+        console.error('[Updater] Failed to launch installer:', fallbackErr);
+        throw fallbackErr;
+      }
+    }
+  }
+
+  /**
+   * Opens Android Settings page for "Install unknown apps"
+   */
+  async openInstallPermissionSettings(): Promise<void> {
+    if (Platform.OS !== 'android') return;
+    try {
+      await IntentLauncher.startActivityAsync(
+        'android.settings.MANAGE_UNKNOWN_APP_SOURCES',
+        { data: 'package:com.ayushbhagat.cinebox' }
+      );
+    } catch (e) {
+      console.warn('[Updater] Could not open unknown sources settings:', e);
+      try {
+        await IntentLauncher.startActivityAsync(
+          'android.settings.APPLICATION_DETAILS_SETTINGS',
+          { data: 'package:com.ayushbhagat.cinebox' }
+        );
+      } catch (err) {
+        console.error('[Updater] Could not open application details:', err);
+      }
     }
   }
 
@@ -97,40 +231,8 @@ class UpdaterService {
     if (Platform.OS !== 'android') return false;
 
     try {
-      const destinationUri = `${FileSystem.cacheDirectory}CineBox-${updateInfo.version}.apk`;
-      console.log(`[Updater] 📥 Downloading APK from: ${updateInfo.downloadUrl}`);
-
-      const downloadResumable = FileSystem.createDownloadResumable(
-        updateInfo.downloadUrl,
-        destinationUri,
-        {},
-        (downloadProgress) => {
-          const total = downloadProgress.totalBytesExpectedToWrite;
-          const written = downloadProgress.totalBytesWritten;
-          if (total > 0 && onProgress) {
-            onProgress(Math.min(1, written / total));
-          }
-        }
-      );
-
-      const downloadResult = await downloadResumable.downloadAsync();
-      if (!downloadResult || !downloadResult.uri) {
-        throw new Error('APK download incomplete');
-      }
-
-      console.log(`[Updater] 📦 Downloaded APK to: ${downloadResult.uri}`);
-
-      // Convert file URI to Android content URI
-      const contentUri = await FileSystem.getContentUriAsync(downloadResult.uri);
-      console.log(`[Updater] 🚀 Launching Android Package Installer: ${contentUri}`);
-
-      await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
-        data: contentUri,
-        type: 'application/vnd.android.package-archive',
-        flags: 0x10000001, // FLAG_GRANT_READ_URI_PERMISSION | FLAG_ACTIVITY_NEW_TASK
-      });
-
-      return true;
+      await this.downloadApk(updateInfo, onProgress);
+      return await this.launchInstaller(updateInfo.version);
     } catch (err: any) {
       console.error('[Updater] Download & install error:', err);
       Alert.alert(

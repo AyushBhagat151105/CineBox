@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Modal,
   View,
@@ -7,9 +7,17 @@ import {
   TouchableOpacity,
   Dimensions,
   ScrollView,
-  Animated,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
-import { ArrowDownCircle, Sparkles, X, CheckCircle, RefreshCw } from 'lucide-react-native';
+import {
+  ArrowDownCircle,
+  Sparkles,
+  X,
+  CheckCircle2,
+  Settings,
+  ShieldCheck,
+} from 'lucide-react-native';
 import { updaterService, UpdateInfo } from '@/services/updater';
 
 const { width } = Dimensions.get('window');
@@ -25,23 +33,91 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
   visible,
   onClose,
 }) => {
-  const [downloading, setDownloading] = useState(false);
+  const [status, setStatus] = useState<'idle' | 'downloading' | 'ready'>('idle');
   const [progress, setProgress] = useState(0);
+  const [isLaunching, setIsLaunching] = useState(false);
+
+  useEffect(() => {
+    if (!updateInfo || !visible) return;
+
+    let isMounted = true;
+    updaterService
+      .isApkAlreadyDownloaded(updateInfo.version, updateInfo.apkSizeBytes)
+      .then((downloaded) => {
+        if (isMounted) {
+          if (downloaded) {
+            setStatus('ready');
+            setProgress(1);
+          } else {
+            setStatus('idle');
+            setProgress(0);
+          }
+        }
+      })
+      .catch(() => {
+        if (isMounted) setStatus('idle');
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [updateInfo, visible]);
 
   if (!updateInfo || !visible) return null;
 
-  const handleUpdate = async () => {
-    setDownloading(true);
+  const handleStartDownload = async () => {
+    setStatus('downloading');
     setProgress(0);
 
-    const success = await updaterService.downloadAndInstall(updateInfo, (p) => {
-      setProgress(p);
-    });
+    try {
+      await updaterService.downloadApk(updateInfo, (p) => {
+        setProgress(p);
+      });
 
-    if (success) {
-      onClose();
+      // Download completed
+      setStatus('ready');
+      setProgress(1);
+
+      // Automatically launch the installer
+      try {
+        await updaterService.launchInstaller(updateInfo.version);
+      } catch (launchErr: any) {
+        console.warn('[UpdateModal] Initial launch suppressed:', launchErr?.message);
+      }
+    } catch (err: any) {
+      console.error('[UpdateModal] Download failed:', err);
+      setStatus('idle');
+      Alert.alert(
+        'Download Failed',
+        err?.message || 'Could not complete download. Check your internet connection.'
+      );
     }
-    setDownloading(false);
+  };
+
+  const handleLaunchInstaller = async () => {
+    setIsLaunching(true);
+    try {
+      await updaterService.launchInstaller(updateInfo.version);
+    } catch (err: any) {
+      console.error('[UpdateModal] Manual launch error:', err);
+      Alert.alert(
+        'Installer Could Not Open',
+        'Android blocked the installer or required explicit permission. Tap "Allow Unknown Apps" below to grant permission.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Open Settings',
+            onPress: () => updaterService.openInstallPermissionSettings(),
+          },
+        ]
+      );
+    } finally {
+      setIsLaunching(false);
+    }
+  };
+
+  const handleOpenSettings = async () => {
+    await updaterService.openInstallPermissionSettings();
   };
 
   const progressPercent = Math.round(progress * 100);
@@ -56,17 +132,28 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
       <View style={styles.overlay}>
         <View style={styles.card}>
           {/* Header Icon */}
-          <View style={styles.iconCircle}>
-            <ArrowDownCircle size={32} color="#e50914" />
+          <View
+            style={[
+              styles.iconCircle,
+              status === 'ready' && styles.iconCircleSuccess,
+            ]}>
+            {status === 'ready' ? (
+              <CheckCircle2 size={32} color="#46d369" />
+            ) : (
+              <ArrowDownCircle size={32} color="#e50914" />
+            )}
           </View>
 
-          {!downloading && (
-            <TouchableOpacity style={styles.closeBtn} onPress={onClose}>
+          {status !== 'downloading' && (
+            <TouchableOpacity style={styles.closeBtn} onPress={onClose} activeOpacity={0.7}>
               <X size={20} color="#8a8a9a" />
             </TouchableOpacity>
           )}
 
-          <Text style={styles.title}>Update Available</Text>
+          <Text style={styles.title}>
+            {status === 'ready' ? 'Ready to Install' : 'Update Available'}
+          </Text>
+
           <View style={styles.versionBadge}>
             <Sparkles size={12} color="#f5c518" />
             <Text style={styles.versionText}>v{updateInfo.version}</Text>
@@ -81,8 +168,8 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
             <Text style={styles.changelogText}>{updateInfo.releaseNotes}</Text>
           </ScrollView>
 
-          {/* Progress or Actions */}
-          {downloading ? (
+          {/* Dynamic Content based on State */}
+          {status === 'downloading' ? (
             <View style={styles.progressContainer}>
               <View style={styles.progressTrack}>
                 <View style={[styles.progressBar, { width: `${progressPercent}%` }]} />
@@ -91,17 +178,49 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
                 Downloading update... {progressPercent}%
               </Text>
             </View>
+          ) : status === 'ready' ? (
+            <View style={styles.actionContainer}>
+              <TouchableOpacity
+                style={styles.installBtn}
+                onPress={handleLaunchInstaller}
+                disabled={isLaunching}
+                activeOpacity={0.85}>
+                {isLaunching ? (
+                  <ActivityIndicator color="#ffffff" size="small" />
+                ) : (
+                  <>
+                    <ShieldCheck size={18} color="#ffffff" />
+                    <Text style={styles.updateBtnText}>Install Now</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.permissionBtn}
+                onPress={handleOpenSettings}
+                activeOpacity={0.75}>
+                <Settings size={14} color="#8a8a9a" />
+                <Text style={styles.permissionBtnText}>Allow Unknown Apps (Settings)</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.laterBtn} onPress={onClose} activeOpacity={0.7}>
+                <Text style={styles.laterBtnText}>Done / Close</Text>
+              </TouchableOpacity>
+            </View>
           ) : (
-            <>
-              <TouchableOpacity style={styles.updateBtn} onPress={handleUpdate}>
+            <View style={styles.actionContainer}>
+              <TouchableOpacity
+                style={styles.updateBtn}
+                onPress={handleStartDownload}
+                activeOpacity={0.85}>
                 <ArrowDownCircle size={18} color="#ffffff" />
                 <Text style={styles.updateBtnText}>Update Now</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity style={styles.laterBtn} onPress={onClose}>
+              <TouchableOpacity style={styles.laterBtn} onPress={onClose} activeOpacity={0.7}>
                 <Text style={styles.laterBtnText}>Remind Me Later</Text>
               </TouchableOpacity>
-            </>
+            </View>
           )}
         </View>
       </View>
@@ -141,6 +260,10 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     borderWidth: 1,
     borderColor: 'rgba(229, 9, 20, 0.25)',
+  },
+  iconCircleSuccess: {
+    backgroundColor: 'rgba(70, 211, 105, 0.12)',
+    borderColor: 'rgba(70, 211, 105, 0.3)',
   },
   closeBtn: {
     position: 'absolute',
@@ -222,6 +345,10 @@ const styles = StyleSheet.create({
     color: '#a0a0b0',
     fontWeight: '600',
   },
+  actionContainer: {
+    width: '100%',
+    alignItems: 'center',
+  },
   updateBtn: {
     width: '100%',
     backgroundColor: '#e50914',
@@ -238,10 +365,41 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 8,
   },
+  installBtn: {
+    width: '100%',
+    backgroundColor: '#2e7d32', // Emerald / Green for install
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: 14,
+    marginBottom: 10,
+    shadowColor: '#2e7d32',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 8,
+  },
   updateBtnText: {
     color: '#ffffff',
     fontSize: 14,
     fontWeight: '700',
+  },
+  permissionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    marginBottom: 6,
+  },
+  permissionBtnText: {
+    color: '#8a8a9a',
+    fontSize: 12,
+    fontWeight: '500',
   },
   laterBtn: {
     paddingVertical: 8,
