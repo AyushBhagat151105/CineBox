@@ -3,6 +3,7 @@ import {
   View,
   Text,
   ScrollView,
+  FlatList,
   Image,
   StyleSheet,
   TouchableOpacity,
@@ -69,9 +70,13 @@ export default function DetailsScreen() {
   const [selectedEpisode, setSelectedEpisode] = useState<number | 'all'>('all');
 
   // TV Remote Focus States
+  const [focusedBack, setFocusedBack] = useState(false);
+  const [focusedHeaderFav, setFocusedHeaderFav] = useState(false);
   const [focusedQuickPlay, setFocusedQuickPlay] = useState(false);
   const [focusedFav, setFocusedFav] = useState(false);
   const [focusedQuality, setFocusedQuality] = useState<string | null>(null);
+  const [focusedSeason, setFocusedSeason] = useState<number | 'packs' | 'all' | null>(null);
+  const [focusedEpisode, setFocusedEpisode] = useState<number | 'all' | null>(null);
   const [focusedRel, setFocusedRel] = useState<string | null>(null);
 
   // Load media and releases once per unique (provider, mediaId)
@@ -234,6 +239,44 @@ export default function DetailsScreen() {
     return { total: releases.length, count4k, count1080, count720, count480 };
   }, [releases]);
 
+  // Options lists for horizontal TV FlatLists
+  const qualityOptions = useMemo(() => {
+    const opts = [{ id: 'all', label: `All (${qualityCounts.total})` }];
+    if (qualityCounts.count4k > 0) opts.push({ id: '4k', label: `4K UHD (${qualityCounts.count4k})` });
+    if (qualityCounts.count1080 > 0) opts.push({ id: '1080p', label: `1080p FHD (${qualityCounts.count1080})` });
+    if (qualityCounts.count720 > 0) opts.push({ id: '720p', label: `720p HD (${qualityCounts.count720})` });
+    if (qualityCounts.count480 > 0) opts.push({ id: '480p', label: `480p (${qualityCounts.count480})` });
+    return opts;
+  }, [qualityCounts]);
+
+  const seasonOptions = useMemo(() => {
+    const opts: Array<{ id: number | 'packs' | 'all'; label: string }> = availableSeasons.seasons.map((s) => ({
+      id: s,
+      label: `Season ${s}`,
+    }));
+    if (availableSeasons.hasPacks) {
+      opts.push({ id: 'packs', label: 'Complete Packs' });
+    }
+    opts.push({ id: 'all', label: 'All Seasons' });
+    return opts;
+  }, [availableSeasons]);
+
+  const episodeOptions = useMemo(() => {
+    const opts: Array<{ id: number | 'all'; label: string; epDone?: boolean }> = [
+      { id: 'all', label: 'All' },
+    ];
+    for (const ep of availableEpisodes) {
+      const s = typeof selectedSeason === 'number' ? selectedSeason : undefined;
+      const epProg = getProgress(mediaId, s, ep);
+      opts.push({
+        id: ep,
+        label: `EP ${ep < 10 ? `0${ep}` : ep}`,
+        epDone: epProg?.completed,
+      });
+    }
+    return opts;
+  }, [availableEpisodes, selectedSeason, getProgress, mediaId]);
+
   const handlePlayRelease = async (release: Release) => {
     console.log(`[Details] ▶️ User clicked Play for release: "${release.filename}"`);
     setResolvingRelease(release.filename);
@@ -333,15 +376,20 @@ export default function DetailsScreen() {
     <View style={styles.container}>
       {/* Top Floating Back and Favorite Buttons */}
       <View style={[styles.floatingBar, { top: insets.top + 8 }]}>
-        <TouchableOpacity
-          style={styles.floatingButton}
-          onPress={() => router.back()}
-          activeOpacity={0.7}>
+        <Pressable
+          focusable={true}
+          onFocus={() => setFocusedBack(true)}
+          onBlur={() => setFocusedBack(false)}
+          style={[styles.floatingButton, focusedBack && styles.floatingButtonFocused]}
+          onPress={() => router.back()}>
           <Ionicons name="arrow-back" size={20} color="#ffffff" />
-        </TouchableOpacity>
+        </Pressable>
 
-        <TouchableOpacity
-          style={styles.floatingButton}
+        <Pressable
+          focusable={true}
+          onFocus={() => setFocusedHeaderFav(true)}
+          onBlur={() => setFocusedHeaderFav(false)}
+          style={[styles.floatingButton, focusedHeaderFav && styles.floatingButtonFocused]}
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           onPress={() => {
             console.log(`[Details] 🔖 Bookmark tapped for mediaId: "${mediaId}" (current isFav: ${isFav})`);
@@ -353,14 +401,13 @@ export default function DetailsScreen() {
               posterUrl: poster,
               year: paramYear,
             });
-          }}
-          activeOpacity={0.7}>
+          }}>
           <Ionicons
             name={isFav ? 'bookmark' : 'bookmark-outline'}
             size={20}
             color={isFav ? '#e50914' : '#ffffff'}
           />
-        </TouchableOpacity>
+        </Pressable>
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
@@ -493,151 +540,125 @@ export default function DetailsScreen() {
 
             {/* Quality Filter Pills */}
             <View style={styles.qualityPillsRow}>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                <TouchableOpacity
-                  style={[styles.qualityPill, selectedQuality === 'all' && styles.qualityPillActive]}
-                  onPress={() => setSelectedQuality('all')}>
-                  <Text style={[styles.qualityPillText, selectedQuality === 'all' && styles.qualityPillTextActive]}>
-                    All ({qualityCounts.total})
-                  </Text>
-                </TouchableOpacity>
-
-                {qualityCounts.count4k > 0 && (
-                  <TouchableOpacity
-                    style={[styles.qualityPill, selectedQuality === '4k' && styles.qualityPillActive]}
-                    onPress={() => setSelectedQuality('4k')}>
-                    <Text style={[styles.qualityPillText, selectedQuality === '4k' && styles.qualityPillTextActive]}>
-                      4K UHD ({qualityCounts.count4k})
-                    </Text>
-                  </TouchableOpacity>
-                )}
-
-                {qualityCounts.count1080 > 0 && (
-                  <TouchableOpacity
-                    style={[styles.qualityPill, selectedQuality === '1080p' && styles.qualityPillActive]}
-                    onPress={() => setSelectedQuality('1080p')}>
-                    <Text style={[styles.qualityPillText, selectedQuality === '1080p' && styles.qualityPillTextActive]}>
-                      1080p FHD ({qualityCounts.count1080})
-                    </Text>
-                  </TouchableOpacity>
-                )}
-
-                {qualityCounts.count720 > 0 && (
-                  <TouchableOpacity
-                    style={[styles.qualityPill, selectedQuality === '720p' && styles.qualityPillActive]}
-                    onPress={() => setSelectedQuality('720p')}>
-                    <Text style={[styles.qualityPillText, selectedQuality === '720p' && styles.qualityPillTextActive]}>
-                      720p HD ({qualityCounts.count720})
-                    </Text>
-                  </TouchableOpacity>
-                )}
-
-                {qualityCounts.count480 > 0 && (
-                  <TouchableOpacity
-                    style={[styles.qualityPill, selectedQuality === '480p' && styles.qualityPillActive]}
-                    onPress={() => setSelectedQuality('480p')}>
-                    <Text style={[styles.qualityPillText, selectedQuality === '480p' && styles.qualityPillTextActive]}>
-                      480p ({qualityCounts.count480})
-                    </Text>
-                  </TouchableOpacity>
-                )}
-              </ScrollView>
+              <FlatList
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                data={qualityOptions}
+                keyExtractor={(item) => item.id}
+                contentContainerStyle={styles.horizontalPillsScroll}
+                renderItem={({ item }) => {
+                  const isActive = selectedQuality === item.id;
+                  const isFocused = focusedQuality === item.id;
+                  return (
+                    <Pressable
+                      focusable={true}
+                      onFocus={() => setFocusedQuality(item.id)}
+                      onBlur={() => setFocusedQuality((p) => (p === item.id ? null : p))}
+                      style={[
+                        styles.qualityPill,
+                        isActive && styles.qualityPillActive,
+                        isFocused && styles.qualityPillFocused,
+                      ]}
+                      onPress={() => setSelectedQuality(item.id)}>
+                      <Text
+                        style={[
+                          styles.qualityPillText,
+                          (isActive || isFocused) && styles.qualityPillTextActive,
+                        ]}>
+                        {item.label}
+                      </Text>
+                    </Pressable>
+                  );
+                }}
+              />
             </View>
 
             {/* Season Tabs (for TV Series) */}
-            {isSeries && availableSeasons.seasons.length > 0 && (
+            {isSeries && seasonOptions.length > 0 && (
               <View style={styles.seasonsSection}>
                 <Text style={styles.subSectionTitle}>SEASONS</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.seasonsScroll}>
-                  {availableSeasons.seasons.map((s) => (
-                    <TouchableOpacity
-                      key={`s_${s}`}
-                      style={[styles.seasonTab, selectedSeason === s && styles.seasonTabActive]}
-                      onPress={() => {
-                        setSelectedSeason(s);
-                        setSelectedEpisode('all');
-                      }}>
-                      <Text style={[styles.seasonTabText, selectedSeason === s && styles.seasonTabTextActive]}>
-                        Season {s}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-
-                  {availableSeasons.hasPacks && (
-                    <TouchableOpacity
-                      style={[styles.seasonTab, selectedSeason === 'packs' && styles.seasonTabActive]}
-                      onPress={() => {
-                        setSelectedSeason('packs');
-                        setSelectedEpisode('all');
-                      }}>
-                      <Text style={[styles.seasonTabText, selectedSeason === 'packs' && styles.seasonTabTextActive]}>
-                        Complete Packs
-                      </Text>
-                    </TouchableOpacity>
-                  )}
-
-                  <TouchableOpacity
-                    style={[styles.seasonTab, selectedSeason === 'all' && styles.seasonTabActive]}
-                    onPress={() => {
-                      setSelectedSeason('all');
-                      setSelectedEpisode('all');
-                    }}>
-                    <Text style={[styles.seasonTabText, selectedSeason === 'all' && styles.seasonTabTextActive]}>
-                      All Seasons
-                    </Text>
-                  </TouchableOpacity>
-                </ScrollView>
+                <FlatList
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  data={seasonOptions}
+                  keyExtractor={(item) => `s_${item.id}`}
+                  contentContainerStyle={styles.horizontalPillsScroll}
+                  renderItem={({ item }) => {
+                    const isActive = selectedSeason === item.id;
+                    const isFocused = focusedSeason === item.id;
+                    return (
+                      <Pressable
+                        focusable={true}
+                        onFocus={() => setFocusedSeason(item.id)}
+                        onBlur={() => setFocusedSeason((prev) => (prev === item.id ? null : prev))}
+                        style={[
+                          styles.seasonTab,
+                          isActive && styles.seasonTabActive,
+                          isFocused && styles.seasonTabFocused,
+                        ]}
+                        onPress={() => {
+                          setSelectedSeason(item.id);
+                          setSelectedEpisode('all');
+                        }}>
+                        <Text
+                          style={[
+                            styles.seasonTabText,
+                            (isActive || isFocused) && styles.seasonTabTextActive,
+                          ]}>
+                          {item.label}
+                        </Text>
+                      </Pressable>
+                    );
+                  }}
+                />
               </View>
             )}
 
             {/* Episode Grid (for TV Series when a specific season is selected) */}
-            {isSeries && availableEpisodes.length > 0 && (
+            {isSeries && episodeOptions.length > 1 && (
               <View style={styles.episodesSection}>
                 <Text style={styles.subSectionTitle}>EPISODES</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.episodesScroll}>
-                  <TouchableOpacity
-                    style={[styles.episodeChip, selectedEpisode === 'all' && styles.episodeChipActive]}
-                    onPress={() => setSelectedEpisode('all')}>
-                    <Text style={[styles.episodeChipText, selectedEpisode === 'all' && styles.episodeChipTextActive]}>
-                      All
-                    </Text>
-                  </TouchableOpacity>
-
-                  {availableEpisodes.map((ep) => {
-                    const s = typeof selectedSeason === 'number' ? selectedSeason : undefined;
-                    const epProg = getProgress(mediaId, s, ep);
-                    const epDone = epProg?.completed;
-                    const isSelected = selectedEpisode === ep;
-
+                <FlatList
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  data={episodeOptions}
+                  keyExtractor={(item) => `ep_${item.id}`}
+                  contentContainerStyle={styles.horizontalPillsScroll}
+                  renderItem={({ item }) => {
+                    const isActive = selectedEpisode === item.id;
+                    const isFocused = focusedEpisode === item.id;
                     return (
-                      <TouchableOpacity
-                        key={`ep_${ep}`}
+                      <Pressable
+                        focusable={true}
+                        onFocus={() => setFocusedEpisode(item.id)}
+                        onBlur={() => setFocusedEpisode((prev) => (prev === item.id ? null : prev))}
                         style={[
                           styles.episodeChip,
-                          isSelected && styles.episodeChipActive,
-                          epDone && styles.episodeChipWatched,
+                          isActive && styles.episodeChipActive,
+                          item.epDone && styles.episodeChipWatched,
+                          isFocused && styles.episodeChipFocused,
                         ]}
-                        onPress={() => setSelectedEpisode(ep)}>
-                        {epDone ? (
+                        onPress={() => setSelectedEpisode(item.id)}>
+                        {item.epDone ? (
                           <Ionicons
                             name="checkmark-circle"
                             size={12}
-                            color="#10b981"
+                            color={isFocused ? '#ffffff' : '#10b981'}
                             style={{ marginRight: 3 }}
                           />
                         ) : null}
                         <Text
                           style={[
                             styles.episodeChipText,
-                            isSelected && styles.episodeChipTextActive,
-                            epDone && styles.episodeChipTextWatched,
+                            (isActive || isFocused) && styles.episodeChipTextActive,
+                            item.epDone && !isActive && !isFocused && styles.episodeChipTextWatched,
                           ]}>
-                          EP {ep < 10 ? `0${ep}` : ep}
+                          {item.label}
                         </Text>
-                      </TouchableOpacity>
+                      </Pressable>
                     );
-                  })}
-                </ScrollView>
+                  }}
+                />
               </View>
             )}
 
@@ -751,6 +772,18 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.65)',
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  floatingButtonFocused: {
+    borderColor: '#ffffff',
+    borderWidth: 2.5,
+    backgroundColor: '#e50914',
+    transform: [{ scale: 1.15 }],
+    elevation: 8,
+    shadowColor: '#ffffff',
+    shadowOpacity: 0.8,
+    shadowRadius: 10,
   },
   scrollContent: {
     paddingBottom: 60,
@@ -963,8 +996,13 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
   },
+  horizontalPillsScroll: {
+    paddingVertical: 4,
+    paddingRight: 16,
+  },
   qualityPillsRow: {
     marginBottom: 14,
+    overflow: 'visible',
   },
   qualityPill: {
     backgroundColor: '#14141e',
@@ -972,12 +1010,22 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
     borderRadius: 16,
     marginRight: 8,
-    borderWidth: 1,
+    borderWidth: 2,
     borderColor: '#222232',
   },
   qualityPillActive: {
     backgroundColor: '#e50914',
     borderColor: '#e50914',
+  },
+  qualityPillFocused: {
+    borderColor: '#ffffff',
+    borderWidth: 2,
+    backgroundColor: '#e50914',
+    transform: [{ scale: 1.08 }],
+    elevation: 8,
+    shadowColor: '#ffffff',
+    shadowOpacity: 0.8,
+    shadowRadius: 8,
   },
   qualityPillText: {
     color: '#8e8e9e',
@@ -990,22 +1038,30 @@ const styles = StyleSheet.create({
   },
   seasonsSection: {
     marginBottom: 14,
-  },
-  seasonsScroll: {
-    flexDirection: 'row',
+    overflow: 'visible',
   },
   seasonTab: {
     backgroundColor: '#161622',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 9,
     borderRadius: 8,
-    marginRight: 8,
-    borderWidth: 1,
+    marginRight: 10,
+    borderWidth: 2,
     borderColor: '#242436',
   },
   seasonTabActive: {
     backgroundColor: '#252538',
     borderColor: '#e50914',
+  },
+  seasonTabFocused: {
+    borderColor: '#ffffff',
+    borderWidth: 2.5,
+    backgroundColor: '#e50914',
+    transform: [{ scale: 1.12 }],
+    elevation: 10,
+    shadowColor: '#ffffff',
+    shadowOpacity: 0.9,
+    shadowRadius: 10,
   },
   seasonTabText: {
     color: '#a0a0b2',
@@ -1014,23 +1070,21 @@ const styles = StyleSheet.create({
   },
   seasonTabTextActive: {
     color: '#ffffff',
-    fontWeight: '700',
+    fontWeight: '800',
   },
   episodesSection: {
     marginBottom: 14,
-  },
-  episodesScroll: {
-    flexDirection: 'row',
+    overflow: 'visible',
   },
   episodeChip: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#14141c',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 6,
-    marginRight: 6,
-    borderWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+    marginRight: 8,
+    borderWidth: 2,
     borderColor: '#20202e',
   },
   episodeChipActive: {
@@ -1041,6 +1095,16 @@ const styles = StyleSheet.create({
     borderColor: '#10b981',
     backgroundColor: 'rgba(16, 185, 129, 0.1)',
   },
+  episodeChipFocused: {
+    borderColor: '#ffffff',
+    borderWidth: 2.5,
+    backgroundColor: '#e50914',
+    transform: [{ scale: 1.14 }],
+    elevation: 10,
+    shadowColor: '#ffffff',
+    shadowOpacity: 0.9,
+    shadowRadius: 10,
+  },
   episodeChipText: {
     color: '#7e7e90',
     fontSize: 11,
@@ -1048,7 +1112,7 @@ const styles = StyleSheet.create({
   },
   episodeChipTextActive: {
     color: '#ffffff',
-    fontWeight: '700',
+    fontWeight: '800',
   },
   episodeChipTextWatched: {
     color: '#10b981',
@@ -1082,13 +1146,13 @@ const styles = StyleSheet.create({
     borderColor: '#202030',
   },
   releaseCardFocused: {
-    borderColor: '#e50914',
+    borderColor: '#ffffff',
     borderWidth: 2.5,
     backgroundColor: '#1c1c28',
     transform: [{ scale: 1.02 }],
     shadowColor: '#e50914',
-    shadowOpacity: 0.8,
-    shadowRadius: 10,
+    shadowOpacity: 0.9,
+    shadowRadius: 12,
     elevation: 8,
   },
   releaseTop: {
