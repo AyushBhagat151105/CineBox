@@ -57,7 +57,7 @@ jobs:
           echo "Selected NDK version: ${INSTALLED_NDK:-auto}"
           ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a,armeabi-v7a ${INSTALLED_NDK:+-PndkVersion=$INSTALLED_NDK}
 
-      - name: Prepare Release Asset
+      - name: Prepare Release Asset & Notes
         run: |
           if [[ "$GITHUB_REF" == refs/tags/* ]]; then
             TAG_NAME=${GITHUB_REF#refs/tags/}
@@ -69,10 +69,15 @@ jobs:
           cp android/app/build/outputs/apk/release/app-release.apk output/CineBox-${TAG_NAME}.apk
           echo "Built APK: output/CineBox-${TAG_NAME}.apk"
 
+          # Extract curated release notes from CHANGELOG.md if present
+          node scripts/extract_release_notes.js "$TAG_NAME"
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.TAG_NAME }}
+          name: CineBox ${{ env.TAG_NAME }}
+          body_path: ${{ hashFiles('RELEASE_NOTES.md') != '' && 'RELEASE_NOTES.md' || '' }}
           files: output/CineBox-*.apk
           generate_release_notes: true
           draft: false

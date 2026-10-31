@@ -3,6 +3,7 @@ import { View, Text, ScrollView, StyleSheet, TouchableOpacity } from 'react-nati
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Constants from 'expo-constants';
 
 export default function PrivacyScreen() {
   const router = useRouter();
@@ -113,7 +114,43 @@ export default function PrivacyScreen() {
           </Text>
         </View>
 
-        {/* Section 4: User Responsibility */}
+        {/* Section 4: Sponsor Intermissions & Ad Safety */}
+        <View style={styles.sectionCard}>
+          <View style={styles.cardHeader}>
+            <View style={[styles.iconPill, { backgroundColor: 'rgba(234, 179, 8, 0.12)' }]}>
+              <Ionicons name="megaphone-outline" size={18} color="#eab308" />
+            </View>
+            <View style={styles.headerTextWrap}>
+              <Text style={styles.cardTitle}>Sponsor Offers & Ad Safety</Text>
+              <Text style={styles.cardCategory}>THIRD-PARTY ADVISORY</Text>
+            </View>
+          </View>
+          <Text style={styles.cardBody}>
+            Public releases of CineBox may display rewarded sponsor offers via Android Chrome Custom Tabs. CineBox does not endorse, verify, or manage third-party advertiser websites.
+          </Text>
+          <View style={styles.divider} />
+          <Text style={styles.cardSubBody}>
+            ⚠️ You are under no obligation to download files, install applications, or grant browser permissions on any sponsor landing page. CineBox bears zero liability for third-party advertisements.
+          </Text>
+        </View>
+
+        {/* Section 5: DMCA & Copyright Inquiries */}
+        <View style={styles.sectionCard}>
+          <View style={styles.cardHeader}>
+            <View style={[styles.iconPill, { backgroundColor: 'rgba(16, 185, 129, 0.12)' }]}>
+              <Ionicons name="document-text-outline" size={18} color="#10b981" />
+            </View>
+            <View style={styles.headerTextWrap}>
+              <Text style={styles.cardTitle}>DMCA & Takedown Notices</Text>
+              <Text style={styles.cardCategory}>INTELLECTUAL PROPERTY</Text>
+            </View>
+          </View>
+          <Text style={styles.cardBody}>
+            CineBox does not host, upload, or control any media streams. Takedown requests for media files must be sent directly to the respective external file locker or CDN hosting the content.
+          </Text>
+        </View>
+
+        {/* Section 6: User Responsibility */}
         <View style={styles.sectionCard}>
           <View style={styles.cardHeader}>
             <View style={[styles.iconPill, { backgroundColor: 'rgba(168, 85, 247, 0.12)' }]}>
@@ -125,12 +162,12 @@ export default function PrivacyScreen() {
             </View>
           </View>
           <Text style={styles.cardBody}>
-            CineBox is an open-source research and interoperability project. Users are responsible for ensuring their usage conforms with local laws and regulations governing digital media.
+            CineBox is an open-source research and interoperability project. Users are solely responsible for ensuring their usage conforms with local laws and regulations governing digital media.
           </Text>
         </View>
 
         <View style={styles.footerWrap}>
-          <Text style={styles.footerVersion}>CineBox Client v1.0.0</Text>
+          <Text style={styles.footerVersion}>CineBox Client v{Constants.expoConfig?.version || '1.0.1'}</Text>
           <Text style={styles.footerTagline}>Designed for simplicity, speed, and privacy.</Text>
         </View>
       </ScrollView>

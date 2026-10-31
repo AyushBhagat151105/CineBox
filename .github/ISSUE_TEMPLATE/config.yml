@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 Community Discussions & Questions
+    url: https://github.com/AyushBhagat151105/CineBox/discussions
+    about: Ask questions, get help with setup, or discuss the app with the community.
+  - name: 🛡️ Security & Privacy Audits
+    url: https://github.com/AyushBhagat151105/CineBox/security/policy
+    about: Review our security policy and zero-telemetry architecture.

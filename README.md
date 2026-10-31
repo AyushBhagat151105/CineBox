@@ -9,7 +9,8 @@
 [![React Native](https://img.shields.io/badge/React%20Native-0.88.0-61dafb?style=for-the-badge&logo=react)](https://reactnative.dev/)
 [![Expo SDK](https://img.shields.io/badge/Expo%20SDK-58.0-black?style=for-the-badge&logo=expo)](https://expo.dev/)
 [![Player](https://img.shields.io/badge/Player-VLC%20Native-ff9900?style=for-the-badge&logo=vlc-media-player)](https://www.videolan.org/vlc/)
-[![License](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge)](LICENSE)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue?style=for-the-badge)](LICENSE-APACHE)
 
 [![Download APK](https://img.shields.io/badge/Download-CineBox_v1.0.1.apk-e50914?style=for-the-badge&logo=android&logoColor=white)](https://github.com/AyushBhagat151105/CineBox/releases/latest)
 [![Documentation](https://img.shields.io/badge/Explore-Documentation-222230?style=for-the-badge&logo=bookstack&logoColor=white)](#-documentation-index)
@@ -26,7 +27,9 @@
 - [Configuration & VIP Mode](#-configuration--vip-mode)
 - [Quick Start & Development](#-quick-start)
 - [CI/CD & In-App OTA Updates](#-cicd--in-app-ota-updates)
-- [Legal & Non-Hosting Disclaimer](#-legal--non-hosting-disclaimer)
+- [Legal, Privacy & Non-Hosting Disclaimer](#-legal-privacy--non-hosting-disclaimer)
+- [Contributing](#-contributing)
+- [Changelog](#-changelog)
 - [License](#-license)
 
 ---
@@ -200,17 +203,37 @@ Once the cloud workflow finishes, the APK is published, and all installed CineBo
 
 ---
 
-## ⚖️ Legal & Non-Hosting Disclaimer
+## ⚖️ Legal, Privacy & Non-Hosting Disclaimer
 
 - **Zero-Hosting Policy**: CineBox does not host, store, stream, or distribute any media files or copyright-protected content on any servers.
 - **Client-Side Indexer**: CineBox functions strictly as a client-side search aggregator and user-agent intent launcher. It indexes publicly available metadata from third-party websites across the open web.
 - **Third-Party External Links**: All streaming links and sponsor offers are retrieved dynamically from external providers. The developers of CineBox hold no liability or responsibility for third-party hosting servers, advertisements, or content availability.
 
+For comprehensive legal terms, DMCA safe harbor declarations, and data protection policies, refer to:
+- ⚖️ **[Legal Disclaimer & Safe Harbor Notice](DISCLAIMER.md)**
+- 🛡️ **[Privacy Policy & Zero-Telemetry Guarantee](PRIVACY_POLICY.md)**
+
+---
+
+## 🤝 Contributing
+
+Contributions, bug reports, and provider enhancements are warmly welcomed! Please read our **[Contributing Guidelines](CONTRIBUTING.md)** before opening issues or pull requests.
+
+---
+
+## 📝 Changelog
+
+Detailed release notes and version history are recorded in **[CHANGELOG.md](CHANGELOG.md)**.
+
 ---
 
 ## 📄 License
 
-This project is licensed under the [MIT License](LICENSE).
+CineBox is open-source software dual-licensed under both the:
+- **[MIT License](LICENSE)**
+- **[Apache License 2.0](LICENSE-APACHE)**
+
+You may choose to use this project under the terms of either license at your option.
 
 ---
 
