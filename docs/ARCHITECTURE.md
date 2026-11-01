@@ -67,7 +67,7 @@ Instead of embedding heavy C++ LibVLC libraries inside the React Native bundle, 
 
 ### 3. Monetization & Ad Network (`src/services/ads.ts`)
 - **Direct Chrome Custom Tab Routing**: Eliminates black screens and Android intent redirection bugs (`intent://`) caused by mobile ad scripts by launching offers via `expo-web-browser`.
-- **Compile-Time VIP Bypass**: Configured through `EXPO_PUBLIC_ENABLE_ADS=false` in local environment builds, completely stripping ad modals for developers and supporters.
+- **User Safety Guardrails**: Displays clear security warnings informing users that ads are third-party sponsor offers requiring zero downloads or permissions.
 
 ### 4. Over-The-Air (OTA) Release Updater (`src/services/updater.ts`)
 - **Direct GitHub Releases Interrogation**: Checks `api.github.com/repos/AyushBhagat151105/CineBox/releases/latest`.

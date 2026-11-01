@@ -48,6 +48,13 @@ export default function SettingsScreen() {
   };
 
   const handleCheckUpdateManual = async () => {
+    if (!ADS_ENABLED) {
+      Alert.alert(
+        'VIP Build (👑)',
+        `You are running CineBox v${Constants.expoConfig?.version || '1.0.0'} VIP.\n\nOTA updates are disabled on VIP builds to preserve your ad-free status.`
+      );
+      return;
+    }
     setCheckingUpdate(true);
     try {
       const info = await updaterService.checkForUpdates();
@@ -239,7 +246,9 @@ export default function SettingsScreen() {
               <View style={styles.settingTextWrap}>
                 <Text style={styles.settingTitle}>Check for Updates</Text>
                 <Text style={styles.settingSubtitle}>
-                  Current version: v{Constants.expoConfig?.version || '1.0.0'} • GitHub Releases
+                  {!ADS_ENABLED
+                    ? `v${Constants.expoConfig?.version || '1.0.0'} • VIP Build (OTA Disabled)`
+                    : `Current version: v${Constants.expoConfig?.version || '1.0.0'} • GitHub Releases`}
                 </Text>
               </View>
               <Ionicons name="chevron-forward" size={18} color="#6b7280" />

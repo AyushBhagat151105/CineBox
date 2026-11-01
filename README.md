@@ -25,7 +25,7 @@
 - [Architecture & Data Flow](#-architecture--data-flow)
 - [Codec & Audio Capability Matrix](#-codec--audio-capability-matrix)
 - [Documentation Index](#-documentation-index)
-- [Configuration & VIP Mode](#-configuration--vip-mode)
+- [Configuration](#-configuration)
 - [Quick Start & Development](#-quick-start)
 - [CI/CD & In-App OTA Updates](#-cicd--in-app-ota-updates)
 - [Legal, Privacy & Non-Hosting Disclaimer](#-legal-privacy--non-hosting-disclaimer)
@@ -64,10 +64,9 @@ Traditional mobile streaming clients rely on stock `ExoPlayer` or React Native v
 - **Seamless Streaming Download**: Streams the latest APK directly to device cache with a real-time progress indicator and immediately prompts the native Android Package Installer.
 - **Monotonic Version Protection**: Built-in `bump.js` tooling enforces monotonically increasing `versionCode` values (`1, 2, 3...`) to guarantee flawless in-place upgrades without data loss.
 
-### 4. 💎 Sponsor Monetization & VIP Mode
+### 4. 💎 Sponsor Monetization & Native Custom Tabs
 - **Native Chrome Custom Tabs**: Solves Android `intent://` redirect crashes and black screens caused by mobile ad scripts by launching Monetag sponsor offers via `expo-web-browser`.
 - **User Safety Advisories**: Prominent in-app security banners remind users that external ads are sponsor offers—no file downloads, APK installations, or browser permissions are ever required.
-- **Compile-Time VIP Bypass**: Setting `EXPO_PUBLIC_ENABLE_ADS=false` permanently strips and bypasses all ad triggers for creators and private builds.
 
 ---
 
@@ -83,7 +82,6 @@ flowchart TD
     end
 
     subgraph Intermission ["💎 Access Control"]
-        VIP{"👑 VIP Build?<br/>EXPO_PUBLIC_ENABLE_ADS"}
         AdModal["📢 Rewarded Sponsor Modal<br/>Chrome Custom Tabs • 25s Countdown • Safety Alerts"]
     end
 
@@ -98,9 +96,7 @@ flowchart TD
 
     User --> Engine
     Engine --> Resolver
-    Resolver --> VIP
-    VIP -- "No (Public Release)" --> AdModal
-    VIP -- "Yes (Ad-Free)" --> VLCIntent
+    Resolver --> AdModal
     AdModal -- "25s Completed" --> VLCIntent
     VLCIntent --> VLCPlayer
     VLCPlayer -. "Back to CineBox" .-> Sidecar
@@ -129,12 +125,12 @@ Comprehensive technical documentation is maintained under the [`docs/`](docs/) d
 - 🏛️ **[System Architecture](docs/ARCHITECTURE.md)**: Subsystem boundaries, unidirectional state flow, and persistence keys.
 - 🛰️ **[Federated Providers](docs/PROVIDERS.md)**: Anti-DMCA domain probing, cryptographic HMAC request signatures, and stream resolvers.
 - 🎬 **[VLC Media Engine](docs/VLC_PLAYER.md)**: Native intent specifications, lifecycle sidecar synchronization, and fallback routing.
-- 💎 **[Monetization & VIP Mode](docs/MONETIZATION.md)**: Monetag Chrome Custom Tabs, countdown timer logic, and ad-free compilation.
+- 💎 **[Monetization Architecture](docs/MONETIZATION.md)**: Monetag Chrome Custom Tabs, countdown timer logic, and safety advisories.
 - 🚀 **[OTA Updater & CI/CD](docs/UPDATER_AND_CICD.md)**: GitHub Releases workflow, version bump scripts, and in-app streaming installation.
 
 ---
 
-## ⚙️ Configuration & VIP Mode
+## ⚙️ Configuration
 
 CineBox supports environment configuration via a root `.env` file:
 
@@ -145,7 +141,6 @@ cp .env.example .env
 
 | Variable | Default | Purpose |
 | :--- | :--- | :--- |
-| `EXPO_PUBLIC_ENABLE_ADS` | `true` | Set to `false` for **Permanent VIP Mode** (completely ad-free builds). |
 | `EXPO_PUBLIC_MONETAG_ZONE_ID` | `12155691` | Publisher Zone ID for Monetag SmartLinks. |
 | `EXPO_PUBLIC_MONETAG_DIRECT_URL` | `https://uplcm.com/4/12155691` | Sponsor SmartLink offer URL. |
 

@@ -1,6 +1,6 @@
-# 💎 Monetization Architecture & VIP Mode
+# 💎 Monetization Architecture
 
-CineBox integrates a privacy-focused rewarded sponsor model using **Monetag Direct SmartLinks** while preserving a permanently ad-free **VIP Mode** for developers and local builds.
+CineBox integrates a privacy-focused rewarded sponsor model using **Monetag Direct SmartLinks** with Chrome Custom Tabs and native safety guardrails.
 
 ---
 
@@ -44,21 +44,3 @@ Because third-party sponsor networks dynamically serve third-party advertiser la
 - **Warning Box in Prompt**: *"Safety & User Responsibility: Ads are provided by external sponsors. You do NOT need to download anything, install APKs, or grant browser permissions. Simply view the page until the timer finishes."*
 - **Active Card Reminder**: Prominently cautions users not to grant notification permissions or install unknown APKs from ad landing pages.
 
----
-
-## 👑 Compile-Time VIP Mode (Permanent Ad Bypass)
-
-For creators, developers, and supporters, CineBox includes a compile-time VIP switch:
-
-```bash
-# In your local .env file:
-EXPO_PUBLIC_ENABLE_ADS=false
-```
-
-When `EXPO_PUBLIC_ENABLE_ADS=false`:
-- `ADS_ENABLED` evaluates to `false`.
-- `adService.isAdUnlocked()` immediately returns `true`.
-- The `RewardedAdModal` is completely bypassed, and videos launch instantly in VLC.
-- Settings shows the **👑 Creator VIP Mode (Ad-Free Developer Build)** status badge.
-
-In CI/CD release builds (`.github/workflows/release.yml`), `EXPO_PUBLIC_ENABLE_ADS: 'true'` is injected to compile the public ad-supported release.

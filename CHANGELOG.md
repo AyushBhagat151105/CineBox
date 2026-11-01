@@ -50,7 +50,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Preflight Stream Validation**: Active HTTP range probing (`bytes=0-0`) and Cloudflare R2 token verification to eliminate dead mirrors before dispatching to VLC.
 - **Over-The-Air (OTA) APK Updates**: Automated in-app GitHub Releases checker with background streaming download and native Android package installation.
 - **Chrome Custom Tabs Sponsor Flow**: Sandboxed Monetag sponsor intermissions preventing `intent://` redirect crashes and black screens.
-- **Permanent VIP Mode**: Added `EXPO_PUBLIC_ENABLE_ADS=false` compile-time flag to permanently bypass all ad modals for private and developer builds.
+- **Ad-Free Developer Configuration**: Added compile-time flag to bypass ad modals for local and test builds.
 - **Privacy & Legal Shields**: Added exhaustive safe harbor documentation (`DISCLAIMER.md`, `PRIVACY_POLICY.md`, and in-app privacy UI) establishing non-hosting intermediary protections and zero telemetry.
 
 ### 🐛 Fixes & Improvements

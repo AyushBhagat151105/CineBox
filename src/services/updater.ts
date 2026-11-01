@@ -3,6 +3,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as IntentLauncher from 'expo-intent-launcher';
 import Constants from 'expo-constants';
 import axios from 'axios';
+import { ADS_ENABLED } from './ads';
 
 export const GITHUB_REPO = 'AyushBhagat151105/CineBox';
 
@@ -42,6 +43,12 @@ class UpdaterService {
    */
   async checkForUpdates(): Promise<UpdateInfo | null> {
     if (Platform.OS !== 'android') return null;
+
+    // Disable OTA updates for VIP / Ad-free builds to prevent overwriting with public builds
+    if (!ADS_ENABLED) {
+      console.log('[Updater] 👑 VIP build detected: OTA updates disabled');
+      return null;
+    }
 
     try {
       console.log(`[Updater] 🔍 Checking GitHub for updates (current: v${this.currentVersion})...`);
@@ -228,7 +235,7 @@ class UpdaterService {
     updateInfo: UpdateInfo,
     onProgress?: UpdateProgressListener
   ): Promise<boolean> {
-    if (Platform.OS !== 'android') return false;
+    if (Platform.OS !== 'android' || !ADS_ENABLED) return false;
 
     try {
       await this.downloadApk(updateInfo, onProgress);
