@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://cinebox.vercel.app/sitemap.xml
+Sitemap: https://cine-box-aggregator.vercel.app/sitemap.xml
