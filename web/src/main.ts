@@ -101,7 +101,7 @@ appEl.innerHTML = `
         <div class="hero-brand" data-rise style="--i: 0;">
           <img src="/assets/cinebox-icon.png" width="36" height="36" alt="CineBox Logo" />
           <span class="hero-brand-name">CineBox</span>
-          <span class="hero-brand-ver">v1.1.1</span>
+          <span class="hero-brand-ver">v2.0.0</span>
         </div>
 
         <div class="hero-statement-container">
@@ -371,10 +371,10 @@ appEl.innerHTML = `
             <div class="cta-downloads-row">
               <div class="cta-download-box">
                 <div>
-                  <div class="cta-box-title">Universal Release v1.1.1</div>
+                  <div class="cta-box-title">Universal Release v2.0.0</div>
                   <div class="cta-box-desc">Multi-ABI (32-bit & 64-bit) with in-app OTA updater included. (65 MB)</div>
                 </div>
-                <a href="https://github.com/AyushBhagat151105/CineBox/releases/download/v1.1.1/CineBox-v1.1.1.apk" class="cta-box-btn">
+                <a href="https://github.com/AyushBhagat151105/CineBox/releases/download/v2.0.0/CineBox-v2.0.0.apk" class="cta-box-btn">
                   <span>Download Universal APK</span>
                 </a>
               </div>
@@ -384,14 +384,14 @@ appEl.innerHTML = `
                   <div class="cta-box-title">Android TV & FireStick</div>
                   <div class="cta-box-desc">10-foot Leanback interface with remote D-Pad navigation. (65 MB)</div>
                 </div>
-                <a href="https://github.com/AyushBhagat151105/CineBox/releases/tag/v1.1.1" class="cta-box-btn">
+                <a href="https://github.com/AyushBhagat151105/CineBox/releases/tag/v2.0.0" class="cta-box-btn">
                   <span>View GitHub Release</span>
                 </a>
               </div>
             </div>
 
             <div class="cta-terminal-snippet">
-              <code>adb install CineBox-v1.1.1.apk</code>
+              <code>adb install CineBox-v2.0.0.apk</code>
               <button id="copy-btn" class="copy-btn">Copy Command</button>
             </div>
           </div>
@@ -596,7 +596,9 @@ faqButtons.forEach(btn => {
   });
 });
 
-// Copy Terminal Command
+// Copy Terminal Command & Dynamic GitHub Releases Sync
+let latestAdbCommand = 'adb install CineBox-v2.0.0.apk';
+
 const copyBtn = document.querySelector<HTMLButtonElement>('#copy-btn')!;
 copyBtn.addEventListener('click', () => {
   function showCopied() {
@@ -604,7 +606,7 @@ copyBtn.addEventListener('click', () => {
     setTimeout(() => { copyBtn.textContent = 'Copy Command'; }, 2000);
   }
   if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText('adb install CineBox-v1.1.1.apk')
+    navigator.clipboard.writeText(latestAdbCommand)
       .then(() => showCopied())
       .catch(() => {
         fallbackCopy();
@@ -614,7 +616,7 @@ copyBtn.addEventListener('click', () => {
   }
   function fallbackCopy() {
     const el = document.createElement('textarea');
-    el.value = 'adb install CineBox-v1.1.1.apk';
+    el.value = latestAdbCommand;
     el.style.position = 'fixed';
     el.style.opacity = '0';
     document.body.appendChild(el);
@@ -626,3 +628,44 @@ copyBtn.addEventListener('click', () => {
     showCopied();
   }
 });
+
+// Automatically sync latest release info from GitHub API
+async function syncLatestRelease() {
+  try {
+    const res = await fetch('https://api.github.com/repos/AyushBhagat151105/CineBox/releases/latest');
+    if (!res.ok) return;
+    const data = await res.json();
+    const tag = data.tag_name || 'v2.0.0';
+    const apkAsset = data.assets?.find((a: any) => a.name?.endsWith('.apk'));
+    const apkUrl = apkAsset?.browser_download_url || `https://github.com/AyushBhagat151105/CineBox/releases/download/${tag}/CineBox-${tag}.apk`;
+    const apkName = apkAsset?.name || `CineBox-${tag}.apk`;
+    const releaseUrl = data.html_url || `https://github.com/AyushBhagat151105/CineBox/releases/tag/${tag}`;
+    const sizeMb = apkAsset?.size ? `${Math.round(apkAsset.size / (1024 * 1024))} MB` : '65 MB';
+
+    // 1. Update Hero version badge & download button
+    const verBadge = document.querySelector<HTMLElement>('.hero-brand-ver');
+    if (verBadge) verBadge.textContent = tag;
+
+    const heroBtnSpan = document.querySelector<HTMLElement>('.hero-cta-box .button-primary span');
+    if (heroBtnSpan) heroBtnSpan.textContent = `Download Universal APK (${sizeMb})`;
+
+    // 2. Update CTA boxes
+    const ctaTitle = document.querySelector<HTMLElement>('.cta-box-title');
+    if (ctaTitle) ctaTitle.textContent = `Universal Release ${tag}`;
+
+    const ctaApkBtn = document.querySelector<HTMLAnchorElement>('a.cta-box-btn[href*=".apk"]');
+    if (ctaApkBtn) ctaApkBtn.href = apkUrl;
+
+    const ctaTagBtn = document.querySelector<HTMLAnchorElement>('a.cta-box-btn[href*="/releases/tag/"]');
+    if (ctaTagBtn) ctaTagBtn.href = releaseUrl;
+
+    // 3. Update ADB Command Snippet
+    latestAdbCommand = `adb install ${apkName}`;
+    const codeSnippet = document.querySelector<HTMLElement>('.cta-terminal-snippet code');
+    if (codeSnippet) codeSnippet.textContent = latestAdbCommand;
+  } catch (err) {
+    console.debug('[CineBox Web] GitHub releases sync fallback:', err);
+  }
+}
+
+syncLatestRelease();
