@@ -10,8 +10,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Planned
-- **Background Download Manager**: Resumable file downloads with pause/resume support and `FileProvider` local playback in VLC.
 - **Multi-Server Provider Expansion**: Additional anime and international movie scrapers.
+
+---
+
+## [v2.0.0] - 2026-11-02
+
+### 🚀 Highlights
+- **Background Download Manager & Scoped Storage**:
+  - **Resumable Downloads**: Background downloads with pause, resume, cancel, speed throttling, and remaining time calculation.
+  - **Public Downloads Directory**: Saves media files directly to `/storage/emulated/0/Download/CineBox/` so files are accessible to external media players and file managers.
+  - **Automatic Legacy Migration**: Automatically moves older files downloaded to internal sandboxes into the public `Download/CineBox` folder without user intervention.
+  - **Android 13+ Scoped Storage Permissions**: Added runtime permission requests for `READ_MEDIA_VIDEO`, `READ_MEDIA_AUDIO`, and `READ_MEDIA_IMAGES` alongside legacy storage permissions.
+- **Offline Playback & Seamless Resume**:
+  - **Offline Priority in Continue Watching**: Tapping a downloaded movie or episode in Continue Watching instantly launches the local file with saved progress, bypassing network scraping and avoiding offline timeouts.
+  - **Offline Corner Badges**: Displays green `[⬇ OFFLINE]` indicators on Continue Watching cards, Movie poster cards, and the Details screen.
+  - **Android FileProvider & Content URIs**: Converts file paths to secure `content://` URIs via `FileProvider` to avoid `FileUriExposedException` when handing off files to external players.
+  - **VLC Title Overlay Fixes**: Supplies `item_title`, `title`, and `android.intent.extra.TITLE` intent extras so VLC overlay never displays "Unknown".
+- **Local Search History**:
+  - **Interactive Search Chips**: Recent searches stored locally with quick-tap re-search and individual or bulk deletion.
 
 ---
 
