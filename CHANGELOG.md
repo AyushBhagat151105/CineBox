@@ -14,6 +14,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v2.0.1] - 2026-11-02
+
+### 🚀 Highlights
+- **10Gbps Google CDN Stream Resolver Fix**:
+  - **Lightweight Range Probing**: Swapped heavy full-body `client.get` probes with native lightweight `fetch` sending `Range: bytes=0-10`, eliminating multi-gigabyte memory buffering and timeout failures.
+  - **Prioritized Fast Servers**: Promoted `pixel.hubcloud.ist` and 10Gbps server links ahead of dead Cloudflare R2 mirrors (403 Forbidden).
+  - **Direct Google CDN Extraction**: Unwraps high-speed `video-downloads.googleusercontent.com` direct video links, unlocking unthrottled 13 MB/s+ download and streaming speeds.
+  - **VLC Playback Buffering Fix**: Eliminates constant loading spinner and playback stutter in VLC by preventing fallback to throttled 1 MB/s PixelDrain mirrors.
+
+---
+
 ## [v2.0.0] - 2026-11-02
 
 ### 🚀 Highlights

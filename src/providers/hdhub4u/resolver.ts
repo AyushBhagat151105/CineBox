@@ -214,50 +214,79 @@ export async function resolveHubCloudStream(
     }
   }
 
-  // Priority 4: 10Gbps Server / Pixel HubCloud / FSL Server
+  // Priority 4: 10Gbps Server / Pixel HubCloud / Google CDN Fast Streams
+  const candidate10GbpsLinks: string[] = [];
+  const otherRedirectLinks: string[] = [];
+
   for (const a of allLinks) {
     const href = a.getAttribute('href') || '';
     const text = a.text.toLowerCase();
-    if (
-      (href.includes('pixel.hubcloud.') ||
-      text.includes('10gbps') ||
-      text.includes('fsl server') ||
-      text.includes('watch online')) &&
-      !href.includes('hubcloud.ist/tg/')
-    ) {
-      console.log(`[HubCloud] 🔄 Priority 4: Probing 10Gbps Server link: ${href}`);
-      try {
-        const destRes = await client.get(href, {
-          maxRedirects: 5,
-          timeout: 4000,
-        });
-        const finalUrl = destRes.request?.res?.responseUrl || destRes.config?.url || '';
-        // Check if final URL has ?link=https://...
-        const linkMatch = finalUrl.match(/[?&]link=(https?:\/\/[^&]+)/);
-        if (linkMatch) {
-          const directUrl = sanitizeStreamUrl(decodeURIComponent(linkMatch[1]));
-          console.log(`[HubCloud] 🎯 Priority 4 MATCH! Unwrapped direct CDN link from redirect: ${directUrl}`);
-          return {
-            url: directUrl,
-            label: '10Gbps Fast Stream',
-          };
-        }
-        if (
-          finalUrl.includes('googleusercontent.com') ||
-          finalUrl.includes('cloudflarestorage.com') ||
-          finalUrl.includes('.mkv') ||
-          finalUrl.includes('.mp4')
-        ) {
-          const cleanFinal = sanitizeStreamUrl(finalUrl);
-          console.log(`[HubCloud] 🎯 Priority 4 MATCH! Final destination CDN URL: ${cleanFinal}`);
-          return {
-            url: cleanFinal,
-            label: '10Gbps Fast Stream',
-          };
-        }
-      } catch (e: any) {
-        console.warn(`[HubCloud] ⚠️ Priority 4 probe failed on ${href}: ${e.message}`);
+    if (href.includes('hubcloud.ist/tg/')) continue;
+
+    if (href.includes('pixel.hubcloud.') || text.includes('10gbps')) {
+      candidate10GbpsLinks.push(href);
+    } else if (text.includes('fsl server') || text.includes('watch online')) {
+      otherRedirectLinks.push(href);
+    }
+  }
+
+  const prioritizedLinks = [...candidate10GbpsLinks, ...otherRedirectLinks];
+
+  for (const href of prioritizedLinks) {
+    console.log(`[HubCloud] 🔄 Priority 4: Probing 10Gbps Server link: ${href}`);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
+    try {
+      const probeRes = await fetch(href, {
+        method: 'GET',
+        headers: {
+          'User-Agent': BROWSER_UA,
+          Referer: redirectUrl,
+          Range: 'bytes=0-10', // CRUCIAL: Request only 10 bytes so the multi-gigabyte video stream is never buffered into JS memory
+        },
+        signal: controller.signal,
+      });
+
+      const finalUrl = probeRes.url || '';
+      const status = probeRes.status;
+      controller.abort();
+      clearTimeout(timer);
+
+      console.log(`[HubCloud] 📡 Priority 4 final redirect URL: ${finalUrl} (HTTP ${status})`);
+
+      // Skip dead or blocked mirrors (e.g. 403 Forbidden Cloudflare R2 buckets)
+      if (status >= 400) {
+        console.warn(`[HubCloud] ⚠️ Priority 4: Server returned HTTP ${status}, skipping...`);
+        continue;
       }
+
+      // Check if redirect URL contains ?link=https://... (e.g. cryptonewz.online/dl.php?link=https://video-downloads.googleusercontent.com/...)
+      const linkMatch = finalUrl.match(/[?&]link=(https?:\/\/[^&]+)/);
+      if (linkMatch) {
+        const directUrl = sanitizeStreamUrl(decodeURIComponent(linkMatch[1]));
+        console.log(`[HubCloud] 🎯 Priority 4 MATCH! Unwrapped direct CDN link from redirect: ${directUrl}`);
+        return {
+          url: directUrl,
+          label: '10Gbps Fast Stream',
+        };
+      }
+
+      if (
+        finalUrl.includes('googleusercontent.com') ||
+        finalUrl.includes('cloudflarestorage.com') ||
+        finalUrl.includes('.mkv') ||
+        finalUrl.includes('.mp4')
+      ) {
+        const cleanFinal = sanitizeStreamUrl(finalUrl);
+        console.log(`[HubCloud] 🎯 Priority 4 MATCH! Final destination CDN URL: ${cleanFinal}`);
+        return {
+          url: cleanFinal,
+          label: '10Gbps Fast Stream',
+        };
+      }
+    } catch (e: any) {
+      clearTimeout(timer);
+      console.warn(`[HubCloud] ⚠️ Priority 4 probe failed on ${href}: ${e.message}`);
     }
   }
 
