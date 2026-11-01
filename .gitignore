@@ -42,3 +42,8 @@ yarn-error.*
 # APK builds
 *.apk
 *.aab
+
+# Taste Skill & Playwright MCP
+.taste-skill/
+.playwright-mcp/
+

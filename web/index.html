@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en" prefix="og: https://ogp.me/ns#">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CineBox — Open-Source Cinematic Streaming for Android & TV</title>
+    <meta name="description" content="Open-source 4K HDR streaming with hardware-accelerated VLC playback on Android, Android TV, and FireStick. No transcoding, zero telemetry, pure cinema." />
+    <meta name="keywords" content="CineBox, streaming apk, open source streaming, android tv streaming, firestick 4k hdr, vlc player android, stremio alternative, cloudstream alternative, moviebox" />
+    <meta name="author" content="Ayush Bhagat" />
+    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
+
+    <!-- Canonical URL -->
+    <link rel="canonical" href="https://cinebox.vercel.app/" />
+
+    <!-- Favicon & PWA Icons -->
+    <link rel="icon" type="image/png" href="/assets/cinebox-icon.png" />
+    <link rel="apple-touch-icon" href="/assets/cinebox-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <meta name="theme-color" content="#08080c" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+
+    <!-- Open Graph (Facebook, Discord, Telegram, WhatsApp) -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://cinebox.vercel.app/" />
+    <meta property="og:site_name" content="CineBox" />
+    <meta property="og:title" content="CineBox — Open-Source Cinematic Streaming for Android & TV" />
+    <meta property="og:description" content="Open-source 4K HDR streaming with hardware-accelerated VLC playback on Android, Android TV, and FireStick. No transcoding, zero telemetry, pure cinema." />
+    <meta property="og:image" content="https://cinebox.vercel.app/assets/og-image.png" />
+    <meta property="og:image:secure_url" content="https://cinebox.vercel.app/assets/og-image.png" />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="CineBox 4K HDR Streaming on Android TV and Mobile" />
+    <meta property="og:locale" content="en_US" />
+
+    <!-- Twitter / X Cards -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:url" content="https://cinebox.vercel.app/" />
+    <meta name="twitter:title" content="CineBox — Open-Source Cinematic Streaming for Android & TV" />
+    <meta name="twitter:description" content="Open-source 4K HDR streaming with hardware-accelerated VLC playback on Android, Android TV, and FireStick. No transcoding, zero telemetry, pure cinema." />
+    <meta name="twitter:image" content="https://cinebox.vercel.app/assets/og-image.png" />
+    <meta name="twitter:image:alt" content="CineBox 4K HDR Streaming on Android TV and Mobile" />
+
+    <!-- Fonts: Schibsted Grotesk & JetBrains Mono -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;600;800;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+    <!-- Structured Data (JSON-LD) for Google Rich Snippets -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "SoftwareApplication",
+          "@id": "https://cinebox.vercel.app/#software",
+          "name": "CineBox",
+          "url": "https://cinebox.vercel.app/",
+          "description": "Open-source 4K HDR streaming application with hardware-accelerated native VLC playback for Android, Android TV, and Amazon FireStick.",
+          "applicationCategory": "MultimediaApplication",
+          "operatingSystem": "Android 5.0+, Android TV, Fire OS",
+          "softwareVersion": "1.1.1",
+          "fileSize": "65MB",
+          "license": "https://github.com/AyushBhagat151105/CineBox/blob/main/LICENSE",
+          "offers": {
+            "@type": "Offer",
+            "price": "0",
+            "priceCurrency": "USD"
+          },
+          "downloadUrl": "https://github.com/AyushBhagat151105/CineBox/releases/download/v1.1.1/CineBox-v1.1.1.apk",
+          "requirements": "VLC for Android",
+          "author": {
+            "@type": "Person",
+            "name": "Ayush Bhagat",
+            "url": "https://github.com/AyushBhagat151105"
+          }
+        },
+        {
+          "@type": "WebSite",
+          "@id": "https://cinebox.vercel.app/#website",
+          "url": "https://cinebox.vercel.app/",
+          "name": "CineBox",
+          "description": "Open-Source Cinematic Streaming for Android & TV",
+          "inLanguage": "en-US"
+        },
+        {
+          "@type": "FAQPage",
+          "@id": "https://cinebox.vercel.app/#faq",
+          "mainEntity": [
+            {
+              "@type": "Question",
+              "name": "How do I install CineBox on Amazon Fire TV Stick?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "Sideload the universal APK via Downloader app or ADB. Because CineBox bundles both 32-bit (armeabi-v7a) and 64-bit (arm64-v8a) binaries into a single universal APK under 65MB, it installs natively on Fire TV Stick Lite, 4K Max, and Cube without needing separate architectures."
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "Why does CineBox use native VLC for Android instead of an internal player?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "By dispatching video streams directly to org.videolan.vlc with custom intent extras, CineBox achieves true zero-transcoding 4K HDR10 playback, uncompressed Dolby Atmos passthrough, and direct multi-track subtitle switching with hardware acceleration."
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "How do in-app updates work without the Google Play Store?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "When a new release is published, the in-app OTA service downloads the binary, checks cache integrity to prevent duplicate downloads, and triggers the Android Package Installer via REQUEST_INSTALL_PACKAGES with zero ad spam."
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "Is CineBox free and open source?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "Dual-licensed under Apache 2.0 and MIT. Pure open source. There are no paid tiers, no mandatory accounts, no telemetry tracking, and no hidden subscriptions."
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "Does CineBox support low-spec 1GB RAM TV sticks?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "On television devices, heavy YouTube iframes and background animations are automatically suppressed, keeping idle memory footprint under 90MB on budget 1GB streaming sticks."
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "What is CineBox's copyright and DMCA content policy?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "CineBox operates exclusively as a client-side search crawler and metadata indexing interface. Zero video streams are stored on our servers. All indexed links point to public third-party services, and DMCA takedown requests must be directed to the third-party hosts originating the files."
+              }
+            }
+          ]
+        }
+      ]
+    }
+    </script>
+  </head>
+  <body class="js">
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,17 @@
+{
+  "name": "CineBox",
+  "short_name": "CineBox",
+  "description": "Open-Source Cinematic Streaming for Android & TV with Native VLC Architecture",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#08080c",
+  "theme_color": "#08080c",
+  "icons": [
+    {
+      "src": "/assets/cinebox-icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

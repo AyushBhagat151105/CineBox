@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CineBox — Privacy & Zero-Telemetry Policy</title>
+  <meta name="description" content="Privacy commitment and data protection guarantees for CineBox: zero tracking, zero telemetry, and local-only device storage." />
+  <link rel="canonical" href="https://cinebox.vercel.app/privacy.html" />
+  <link rel="icon" type="image/png" href="/assets/cinebox-icon.png" />
+  <meta property="og:title" content="CineBox — Privacy & Zero-Telemetry Policy" />
+  <meta property="og:description" content="Privacy commitment and data protection guarantees for CineBox: zero tracking, zero telemetry, and local-only device storage." />
+  <meta property="og:image" content="https://cinebox.vercel.app/assets/og-image.png" />
+  <meta name="theme-color" content="#08080c" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:ital,wght@0,400..900;1,400..900&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #08080c;
+      --surface: #12121a;
+      --ink: #f8f8fc;
+      --muted: #a8a8b8;
+      --accent: #e50914;
+      --font: 'Schibsted Grotesk', system-ui, sans-serif;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--ink);
+      font-family: var(--font);
+      line-height: 1.6;
+      padding: clamp(2rem, 5vw, 4rem) clamp(1.5rem, 4vw, 3rem);
+      max-width: 860px;
+      margin: 0 auto;
+    }
+    a { color: var(--ink); text-decoration: underline; text-underline-offset: 0.2em; }
+    a:hover { color: var(--accent); }
+    .back-link {
+      display: inline-block;
+      margin-bottom: 2.5rem;
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: var(--muted);
+      text-decoration: none;
+    }
+    .back-link:hover { color: var(--ink); }
+    h1 {
+      font-size: clamp(2rem, 4vw, 3.2rem);
+      font-weight: 900;
+      letter-spacing: -0.04em;
+      line-height: 1.05;
+      margin-bottom: 1.5rem;
+    }
+    .badge {
+      display: inline-block;
+      background: var(--surface);
+      color: var(--muted);
+      font-size: 0.85rem;
+      padding: 0.25rem 0.65rem;
+      margin-bottom: 2rem;
+    }
+    section {
+      margin-top: 2.5rem;
+      border-top: 1px solid var(--surface);
+      padding-top: 1.5rem;
+    }
+    h2 {
+      font-size: 1.35rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.75rem;
+    }
+    p {
+      color: var(--muted);
+      font-size: 1.05rem;
+      margin-bottom: 1rem;
+    }
+    ul {
+      color: var(--muted);
+      margin-left: 1.5rem;
+      margin-bottom: 1rem;
+      font-size: 1.05rem;
+    }
+    li { margin-bottom: 0.5rem; }
+    strong { color: var(--ink); }
+    footer {
+      margin-top: 4rem;
+      padding-top: 2rem;
+      border-top: 1px solid var(--surface);
+      font-size: 0.85rem;
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+  <a href="/" class="back-link">← Return to CineBox</a>
+  <span class="badge">Privacy Policy · Zero Telemetry Guarantee</span>
+  <h1>Privacy & Data Protection Policy</h1>
+
+  <section>
+    <h2>1. Zero Telemetry & No Tracking</h2>
+    <p>
+      CineBox is built on a strict privacy-first foundation. The application contains <strong>zero third-party tracking libraries, zero analytic SDKs, zero session trackers, and zero behavioral profiling</strong>. We do not track what you search, what you watch, or how often you use the app.
+    </p>
+  </section>
+
+  <section>
+    <h2>2. No Central Accounts or Identity</h2>
+    <p>
+      CineBox requires no account creation, email registration, phone number verification, or payment credentials. Your watch history, bookmarks, and settings are saved exclusively on your local device storage.
+    </p>
+  </section>
+
+  <section>
+    <h2>3. Direct Client-to-Provider Communications</h2>
+    <p>
+      When CineBox indexes search queries or launches streams in VLC, the network requests are executed directly from your local client device to the public third-party provider or CDN. No intermediate CineBox proxy or relay server intercepts or logs your network traffic.
+    </p>
+  </section>
+
+  <section>
+    <h2>4. In-App Updates</h2>
+    <p>
+      The in-app update checker communicates directly with the official GitHub Releases API (`api.github.com`) using standard HTTPS requests to check for new version tags and download published APK assets. No personal identifiable information is transmitted during update checks.
+    </p>
+  </section>
+
+  <footer>
+    CineBox Open-Source Project · Dual-licensed Apache 2.0 / MIT.
+  </footer>
+</body>
+</html>
