@@ -20,3 +20,15 @@ export function cleanDisplayTitle(title: string): string {
     .replace(/\s+/g, ' ')
     .trim();
 }
+
+// Canonical series title normalizer: strips season/series suffixes and years to group episodes of the same show
+export function normalizeShowTitle(title: string): string {
+  if (!title) return '';
+  return cleanMovieTitle(title)
+    .replace(/\s*[\(\[]?(?:Season|S)[\s.:_-]*\d+[\)\]]?/gi, '')
+    .replace(/\s*\(\d{4}\)/g, '')
+    .replace(/[\s\-_|:]+$/, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}

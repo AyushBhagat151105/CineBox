@@ -130,7 +130,17 @@ export class FourKHdHubProvider implements MediaProvider {
     const root = parse(res.data);
     const releases: Release[] = [];
 
-    const elements = root.querySelectorAll('.download-item, .episode-download-item, a[href*="hubcloud"]');
+    const isSeriesPost =
+      postUrl.includes('-series-') ||
+      /season|series/i.test(root.querySelector('h1')?.text || '');
+    const epElements = root.querySelectorAll('.episode-download-item');
+    const hasEpisodes = epElements.length > 0;
+
+    // On TV series posts where individual episodes exist, NEVER query .download-item (which are full season zip/rar packs)
+    const elements = hasEpisodes
+      ? epElements
+      : root.querySelectorAll('.download-item, a[href*="hubcloud"]');
+
     for (const el of elements) {
       const fileTitle =
         el.querySelector('.file-title, .episode-file-title')?.text?.trim() ||
@@ -139,10 +149,10 @@ export class FourKHdHubProvider implements MediaProvider {
 
       const fullContextText = `${el.text} ${fileTitle}`;
 
-      // AVOID ALL ZIP / RAR / 7Z ARCHIVES - Video players cannot stream zipped files
+      // AVOID ALL ZIP / RAR / 7Z / PACK ARCHIVES - Video players cannot stream zipped files
       if (
-        /\b(?:zip|rar|7z|tar)\b/i.test(fileTitle) ||
-        /\b(?:zip|rar|7z|tar)\b/i.test(fullContextText) ||
+        /\b(?:zip|rar|7z|tar|pack|packs|batch)\b/i.test(fileTitle) ||
+        /\b(?:zip|rar|7z|tar|pack|packs|batch)\b/i.test(fullContextText) ||
         /\.(?:zip|rar|7z|tar)(?:\?|$)/i.test(fileTitle)
       ) {
         continue;
@@ -155,7 +165,7 @@ export class FourKHdHubProvider implements MediaProvider {
       for (const link of links) {
         const href = link.getAttribute('href');
         if (!href) continue;
-        if (/\.(?:zip|rar|7z|tar)(?:\?|$)/i.test(href)) continue;
+        if (/\.(?:zip|rar|7z|tar)(?:\?|$)/i.test(href) || /\/packs\//i.test(href)) continue;
 
         const linkLabel = link.text.trim() || 'Direct Mirror';
         validMirrors.push({
@@ -187,6 +197,11 @@ export class FourKHdHubProvider implements MediaProvider {
       }
 
       const { season, episode } = parseSeasonEpisode(fullContextText);
+
+      // On TV series posts, skip any release that has no episode number (full season packs / zip archives)
+      if ((isSeriesPost || hasEpisodes) && episode === undefined) {
+        continue;
+      }
 
       releases.push({
         provider: 'fourkhdhub',
@@ -226,6 +241,11 @@ export class FourKHdHubProvider implements MediaProvider {
       try {
         const { url, label } = await resolveShortenerUrl(mirror.resolverUrl);
         if (url) {
+          if (/\.(?:zip|rar|7z|tar)(?:\?|$)/i.test(url)) {
+            console.warn(`[4KHDHub] ⚠️ Mirror resolved to a zip/rar file: ${url}, rejecting...`);
+            continue;
+          }
+
           console.log(`[4KHDHub] ✅ Mirror [${i + 1}/${release.mirrors.length}] resolved successfully: ${url} (${label})`);
           return {
             provider: 'fourkhdhub',

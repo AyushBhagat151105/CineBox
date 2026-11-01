@@ -5,14 +5,18 @@ import { parseReleaseTags } from '@/utils';
 interface ReleaseBadgeRowProps {
   releaseName?: string;
   maxTags?: number;
+  excludeResolutions?: boolean;
 }
 
 export const ReleaseBadgeRow: React.FC<ReleaseBadgeRowProps> = React.memo(
-  ({ releaseName, maxTags = 4 }) => {
+  ({ releaseName, maxTags = 4, excludeResolutions = false }) => {
     if (!releaseName) return null;
 
     const { tags } = parseReleaseTags(releaseName);
-    const visibleTags = tags.slice(0, maxTags);
+    const candidateTags = excludeResolutions
+      ? tags.filter((t) => t.type !== 'resolution')
+      : tags;
+    const visibleTags = candidateTags.slice(0, maxTags);
 
     if (visibleTags.length === 0) return null;
 

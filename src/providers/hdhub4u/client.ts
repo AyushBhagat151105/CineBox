@@ -229,6 +229,8 @@ export class HDHub4uProvider implements MediaProvider {
 
     let currentEpisode: number | undefined;
     let activeSeason: number | undefined = defaultSeason;
+    let activeQuality = '1080p FHD';
+    let activeResolution = 1080;
 
     for (const el of blocks) {
       const text = el.text.trim();
@@ -239,11 +241,14 @@ export class HDHub4uProvider implements MediaProvider {
         activeSeason = parseInt(seasonHeadingMatch[1], 10);
       }
 
-      // Check if this block defines an Episode
-      const epHeadingMatch = text.match(/\b(?:EPiSODE|Episode|Ep|EP)[\s.:_-]*(\d+)\b/i);
-      if (epHeadingMatch && text.length < 50) {
-        currentEpisode = parseInt(epHeadingMatch[1], 10);
-        continue;
+      // Check if this block defines quality for following episodes (e.g. ": Single Episode 720p 10Bit HEVC :")
+      const qualityHeadingMatch = text.match(/\b(480p|720p|1080p|2160p|4k)\b/i);
+      if (qualityHeadingMatch && text.length < 60 && !el.querySelector('a[href]')) {
+        const q = qualityHeadingMatch[1].toLowerCase();
+        if (q.includes('480')) { activeQuality = '480p'; activeResolution = 480; }
+        else if (q.includes('720')) { activeQuality = '720p HD'; activeResolution = 720; }
+        else if (q.includes('1080')) { activeQuality = '1080p FHD'; activeResolution = 1080; }
+        else if (q.includes('2160') || q.includes('4k')) { activeQuality = '4K UHD'; activeResolution = 2160; }
       }
 
       // Check for download links in this block
@@ -262,13 +267,42 @@ export class HDHub4uProvider implements MediaProvider {
         );
       });
 
-      if (dlLinks.length === 0) continue;
+      if (dlLinks.length === 0) {
+        // Check if this block is an Episode heading without links (e.g. "Episode 1")
+        const epHeadingMatch = text.match(/\b(?:EPiSODE|Episode|Ep|E)[\s.:_-]*(\d{1,4})\b/i);
+        if (epHeadingMatch && text.length < 50) {
+          currentEpisode = parseInt(epHeadingMatch[1], 10);
+        }
+        continue;
+      }
 
-      // Filter out ZIP / RAR / 7Z archives - cannot be streamed
-      if (
-        /\b(?:zip|rar|7z|tar)\b/i.test(text) ||
-        /\.(?:zip|rar|7z|tar)(?:\?|$)/i.test(text)
-      ) {
+      // Filter out ZIP / RAR / 7Z / PACK archives - Video players cannot stream zipped files
+      const isArchiveOrPack =
+        /\b(?:zip|rar|7z|tar|pack|packs|batch|complete)\b/i.test(text) ||
+        /\.(?:zip|rar|7z|tar)(?:\?|$)/i.test(text) ||
+        dlLinks.some((l) => /\/packs\//i.test(l.getAttribute('href') || ''));
+
+      if (isArchiveOrPack) {
+        continue;
+      }
+
+      // Check if block or links specify an episode (e.g. "E01 - Drive", "EPiSODE 1 | WATCH", "Ep 02")
+      const blockEpMatch = text.match(/\b(?:EPiSODE|Episode|Ep|E)[\s.:_-]*(\d{1,4})\b/i);
+      if (blockEpMatch) {
+        currentEpisode = parseInt(blockEpMatch[1], 10);
+      } else {
+        for (const l of dlLinks) {
+          const lText = `${l.text} ${l.getAttribute('href') || ''}`;
+          const lEpMatch = lText.match(/\b(?:EPiSODE|Episode|Ep|E)[\s.:_-]*(\d{1,4})\b/i);
+          if (lEpMatch) {
+            currentEpisode = parseInt(lEpMatch[1], 10);
+            break;
+          }
+        }
+      }
+
+      // On TV series, skip any release that could not be matched to an episode (prevents unplayable season packs)
+      if ((defaultSeason !== undefined || activeSeason !== undefined) && currentEpisode === undefined) {
         continue;
       }
 
@@ -285,8 +319,8 @@ export class HDHub4uProvider implements MediaProvider {
       // Determine quality strictly from link anchor text or short heading block
       const targetText = (text.length < 160 ? text : dlLinks.map((l) => l.text).join(' ')).toLowerCase();
 
-      let quality = '1080p FHD';
-      let resolution = 1080;
+      let quality = activeQuality;
+      let resolution = activeResolution;
 
       if (/\b(?:480p|360p)\b/.test(targetText)) {
         quality = '480p';
@@ -317,13 +351,10 @@ export class HDHub4uProvider implements MediaProvider {
         }
       }
 
-      const isPack = /pack|complete/i.test(text);
-
       let filename: string;
-      if (currentEpisode !== undefined && !isPack) {
-        filename = `${fallbackTitle} · Episode ${currentEpisode} (${quality}${sizeStr ? ` [${sizeStr}]` : ''})`;
-      } else if (isPack && sizeStr) {
-        filename = `${fallbackTitle} · Season Pack (${quality} [${sizeStr}])`;
+      if (currentEpisode !== undefined) {
+        const epStr = `E${currentEpisode < 10 ? '0' + currentEpisode : currentEpisode}`;
+        filename = `${fallbackTitle} · ${epStr} (${quality}${sizeStr ? ` [${sizeStr}]` : ''})`;
       } else {
         const cleanedBlock = cleanDisplayTitle(text.replace(/drive|instant|watch|download/gi, '').trim());
         filename = cleanedBlock ? `${fallbackTitle} · ${cleanedBlock} (${quality})` : `${fallbackTitle} (${quality})`;
@@ -335,7 +366,7 @@ export class HDHub4uProvider implements MediaProvider {
           resolverUrl: l.getAttribute('href')!,
           directFile: false,
         }))
-        .filter((m) => !/\.(?:zip|rar|7z|tar)(?:\?|$)/i.test(m.resolverUrl));
+        .filter((m) => !/\.(?:zip|rar|7z|tar)(?:\?|$)/i.test(m.resolverUrl) && !/\/packs\//i.test(m.resolverUrl));
 
       if (mirrors.length === 0) continue;
 
@@ -344,8 +375,8 @@ export class HDHub4uProvider implements MediaProvider {
         filename,
         quality,
         resolution,
-        season: isPack ? undefined : activeSeason,
-        episode: isPack ? undefined : currentEpisode,
+        season: activeSeason,
+        episode: currentEpisode,
         size: sizeStr,
         mirrors,
       });

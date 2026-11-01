@@ -703,9 +703,13 @@ export default function DetailsScreen() {
                       {rel.size && <Text style={styles.releaseSize}>{rel.size}</Text>}
                     </View>
 
-                    {/* Technical Print Feature Chips (IMAX, REMUX, 4K UHD, HDR, Audio) */}
+                    {/* Technical Print Feature Chips (IMAX, REMUX, HDR, Audio) */}
                     <View style={styles.releaseFeatureRow}>
-                      <ReleaseBadgeRow releaseName={rel.releaseName || rel.filename} maxTags={5} />
+                      <ReleaseBadgeRow
+                        releaseName={rel.releaseName || rel.filename}
+                        maxTags={5}
+                        excludeResolutions={true}
+                      />
                     </View>
 
                     <Text numberOfLines={2} style={[styles.releaseFilename, isRelFocused && styles.releaseFilenameFocused]}>

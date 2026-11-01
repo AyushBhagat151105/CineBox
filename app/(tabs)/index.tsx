@@ -20,7 +20,7 @@ import { aggregator } from '@/providers';
 import { CatalogItem, WatchHistoryItem } from '@/types';
 import { MovieCard, ContinueWatchingCard, ProviderBadge, TrailerPlayer } from '@/components';
 import { useAppStore } from '@/store';
-import { cleanMovieTitle, cleanDisplayTitle } from '@/utils';
+import { cleanMovieTitle, cleanDisplayTitle, normalizeShowTitle } from '@/utils';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const isTV = Platform.isTV || SCREEN_WIDTH > 800;
@@ -81,6 +81,35 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const watchHistory = useAppStore((s) => s.watchHistory);
+
+  // Deduplicate and filter Continue Watching items:
+  // - Never show completed content (≥90% / completed: true)
+  // - Show at most ONE card per series/show (latest active episode)
+  const continueWatchingList = useMemo(() => {
+    const seenShows = new Set<string>();
+    const result: WatchHistoryItem[] = [];
+
+    for (const item of watchHistory) {
+      // 1. Completed items (≥90% or completed: true) are finished and should not clutter "Continue Watching"
+      const isCompleted =
+        item.completed ||
+        (item.durationSeconds > 0 && item.positionSeconds / item.durationSeconds >= 0.9);
+      if (isCompleted) continue;
+
+      // 2. Identify the series/show uniquely so a show NEVER repeats
+      // If it's a TV series (season, episode, or series title), normalize title to group all seasons/episodes together
+      const isSeries = item.season !== undefined || item.episode !== undefined || /season|series/i.test(item.title);
+      const normalizedTitle = normalizeShowTitle(item.title);
+      const showKey = isSeries ? `series_${normalizedTitle}` : `${item.provider}_${item.mediaId}`;
+
+      if (seenShows.has(showKey)) continue;
+      seenShows.add(showKey);
+      result.push(item);
+    }
+
+    console.log('[HomeScreen] 📺 continueWatchingList computed:', result.map((r) => `${r.title} S${r.season}:E${r.episode} (${r.positionSeconds}s)`));
+    return result;
+  }, [watchHistory]);
 
   const flatListRef = useRef<FlatList>(null);
 
@@ -286,7 +315,7 @@ export default function HomeScreen() {
         {isDefaultAll && (
           <>
             {/* 1. Continue Watching Section */}
-            {watchHistory.length > 0 && (
+            {continueWatchingList.length > 0 && (
               <View style={styles.section}>
                 <View style={styles.sectionHeader}>
                   <View style={styles.sectionTitleRow}>
@@ -299,7 +328,7 @@ export default function HomeScreen() {
                   horizontal
                   showsHorizontalScrollIndicator={false}
                   contentContainerStyle={styles.horizontalList}
-                  data={watchHistory}
+                  data={continueWatchingList}
                   renderItem={({ item }) => <ContinueWatchingCard item={item} />}
                   keyExtractor={continueWatchingKeyExtractor}
                   initialNumToRender={3}
@@ -462,7 +491,7 @@ export default function HomeScreen() {
   }, [
     selectedCategory,
     selectedGenre,
-    watchHistory,
+    continueWatchingList,
     featuredItem,
     curated4k,
     curatedBollywood,

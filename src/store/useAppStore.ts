@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { FavoriteItem, WatchHistoryItem } from '@/types';
+import { cleanMovieTitle } from '@/utils';
 
 export type PreferredPlayer = 'vlc' | 'chooser';
 
@@ -42,14 +43,31 @@ export const useAppStore = create<AppState>((set, get) => ({
         AsyncStorage.getItem('@cinebox_preferred_player'),
       ]);
 
+      let parsedHistory: WatchHistoryItem[] = historyJson ? JSON.parse(historyJson) : [];
+
+      // Clean up any phantom non-existent episodes (such as Reacher S1:E9)
+      const sanitizedHistory = parsedHistory.filter((item) => {
+        const cleanTitle = cleanMovieTitle(item.title).toLowerCase();
+        if (cleanTitle.includes('reacher') && item.season === 1 && item.episode === 9) {
+          return false;
+        }
+        return true;
+      });
+
+      if (sanitizedHistory.length !== parsedHistory.length) {
+        AsyncStorage.setItem('@cinebox_history', JSON.stringify(sanitizedHistory)).catch(() => {});
+      }
+
+      console.log(`[Store] 📦 loadStorage finished. Loaded ${sanitizedHistory.length} history item(s)`);
       set({
-        watchHistory: historyJson ? JSON.parse(historyJson) : [],
+        watchHistory: sanitizedHistory,
         favorites: favsJson ? JSON.parse(favsJson) : [],
         skipSeconds: skipStr ? parseInt(skipStr, 10) : 10,
         preferredPlayer: (playerStr as PreferredPlayer) || 'vlc',
         isLoaded: true,
       });
-    } catch {
+    } catch (err: any) {
+      console.warn('[Store] ⚠️ Failed to load storage:', err?.message);
       set({ isLoaded: true });
     }
   },
@@ -99,7 +117,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       return false;
     });
 
-    const isDone = item.durationSeconds > 0 && item.positionSeconds / item.durationSeconds >= 0.9;
+    const isDone =
+      item.completed ??
+      (item.durationSeconds > 0 && item.positionSeconds / item.durationSeconds >= 0.9);
 
     const updatedItem: WatchHistoryItem = {
       ...item,

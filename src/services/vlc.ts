@@ -3,6 +3,7 @@ import * as IntentLauncher from 'expo-intent-launcher';
 import { ProviderId } from '@/types';
 import { useAppStore } from '@/store';
 import { sanitizeStreamUrl } from '@/utils';
+import { aggregator } from '@/providers';
 import { adService } from './ads';
 
 export interface VlcPlaybackOptions {
@@ -410,11 +411,10 @@ class VlcService {
 
       const isCompleted = duration > 0 && finalPosition / duration >= 0.9;
 
-      // Series Auto-Advance: If episode completed (≥90%), advance to the next episode
+      // Series Auto-Advance: If episode completed (≥90%), check if next episode exists before advancing
       if (isCompleted && options.season !== undefined && options.episode !== undefined) {
-        const nextEp = options.episode + 1;
         console.log(
-          `[VLC] 🏆 Episode completed (${finalPosition}s / ${duration}s). Auto-advancing Continue Watching to S${options.season}:E${nextEp}`
+          `[VLC] 🏆 Episode completed (${finalPosition}s / ${duration}s) for S${options.season}:E${options.episode}. Marking watched.`
         );
 
         // 1. Mark current episode as completed in history
@@ -431,18 +431,63 @@ class VlcService {
           durationSeconds: duration,
         });
 
-        // 2. Add next episode to Continue Watching at 0s so user can resume seamlessly
-        await useAppStore.getState().saveProgress({
-          mediaId: options.mediaId,
-          title: options.title,
-          provider: options.provider,
-          posterUrl: options.posterUrl,
-          backdropUrl: options.backdropUrl,
-          season: options.season,
-          episode: nextEp,
-          positionSeconds: 0,
-          durationSeconds: duration,
-        });
+        // 2. Safely verify if a next episode actually exists in the catalog before advancing Continue Watching
+        try {
+          const releases = await aggregator.getAllReleases([
+            { provider: options.provider, id: options.mediaId },
+          ]);
+
+          const nextEpNum = options.episode + 1;
+          const hasNextEp = releases.some(
+            (r) => r.episode === nextEpNum && (r.season === undefined || r.season === options.season)
+          );
+
+          if (hasNextEp) {
+            console.log(
+              `[VLC] 🎯 Verified next episode exists: S${options.season}:E${nextEpNum}. Queuing in Continue Watching.`
+            );
+            await useAppStore.getState().saveProgress({
+              mediaId: options.mediaId,
+              title: options.title,
+              provider: options.provider,
+              posterUrl: options.posterUrl,
+              backdropUrl: options.backdropUrl,
+              season: options.season,
+              episode: nextEpNum,
+              positionSeconds: 0,
+              durationSeconds: duration,
+            });
+          } else {
+            // Check if next season exists (e.g. S(season + 1):E1)
+            const nextSeasonNum = options.season + 1;
+            const hasNextSeason = releases.some(
+              (r) => r.season === nextSeasonNum && (r.episode === 1 || r.episode === undefined)
+            );
+
+            if (hasNextSeason) {
+              console.log(
+                `[VLC] 🎯 Season finale completed! Verified next season exists: S${nextSeasonNum}:E1. Queuing in Continue Watching.`
+              );
+              await useAppStore.getState().saveProgress({
+                mediaId: options.mediaId,
+                title: options.title,
+                provider: options.provider,
+                posterUrl: options.posterUrl,
+                backdropUrl: options.backdropUrl,
+                season: nextSeasonNum,
+                episode: 1,
+                positionSeconds: 0,
+                durationSeconds: duration,
+              });
+            } else {
+              console.log(
+                `[VLC] 🏁 Series/Season finale reached for S${options.season}:E${options.episode}. No next episode exists in catalog.`
+              );
+            }
+          }
+        } catch (catalogErr: any) {
+          console.warn('[VLC] ⚠️ Could not verify next episode from catalog:', catalogErr?.message);
+        }
       } else if (finalPosition > 10 || isCompleted) {
         console.log(`[VLC] 💾 Saving watch progress: ${finalPosition}s / ${duration}s for "${options.title}"`);
         await useAppStore.getState().saveProgress({
