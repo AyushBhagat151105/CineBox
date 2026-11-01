@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -10,9 +10,10 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { CatalogItem } from '@/types';
+import { useAppStore } from '@/store';
 import { ProviderBadge } from './ProviderBadge';
 import { Ionicons } from '@expo/vector-icons';
-import { cleanMovieTitle, cleanDisplayTitle } from '@/utils';
+import { cleanMovieTitle, cleanDisplayTitle, normalizeShowTitle } from '@/utils';
 
 interface MovieCardProps {
   item: CatalogItem;
@@ -34,6 +35,18 @@ export const MovieCard: React.FC<MovieCardProps> = React.memo(({
 }) => {
   const router = useRouter();
   const [isFocused, setIsFocused] = useState(false);
+  const downloads = useAppStore((s) => s.downloads);
+
+  // Check if content is downloaded and available offline
+  const isOffline = useMemo(() => {
+    return downloads.some((d) => {
+      if (d.status !== 'completed' || !d.fileUri) return false;
+      return (
+        d.mediaId === item.id.value ||
+        normalizeShowTitle(d.title) === normalizeShowTitle(item.title)
+      );
+    });
+  }, [downloads, item.id.value, item.title]);
 
   const cardHeight = height || Math.round(width * 1.48);
   const cleanedTitle = cleanDisplayTitle(item.title);
@@ -82,6 +95,13 @@ export const MovieCard: React.FC<MovieCardProps> = React.memo(({
         {item.mediaType === 'series' && (
           <View style={styles.seriesBadge}>
             <Text style={styles.seriesText}>SERIES</Text>
+          </View>
+        )}
+
+        {isOffline && (
+          <View style={styles.offlineCornerBadge}>
+            <Ionicons name="arrow-down-circle" size={11} color="#22c55e" />
+            <Text style={styles.offlineCornerText}>OFFLINE</Text>
           </View>
         )}
       </View>
@@ -175,6 +195,26 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 9,
     fontWeight: '800',
+  },
+  offlineCornerBadge: {
+    position: 'absolute',
+    bottom: 6,
+    right: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(15, 23, 42, 0.92)',
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    borderRadius: 4,
+    gap: 3,
+    borderWidth: 1,
+    borderColor: 'rgba(34, 197, 94, 0.6)',
+  },
+  offlineCornerText: {
+    color: '#4ade80',
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.5,
   },
   title: {
     color: '#f0f0f5',

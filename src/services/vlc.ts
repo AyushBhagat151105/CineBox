@@ -1,5 +1,6 @@
 import { Alert, AppState, AppStateStatus, Linking, Platform } from 'react-native';
 import * as IntentLauncher from 'expo-intent-launcher';
+import * as FileSystem from 'expo-file-system/legacy';
 import { ProviderId } from '@/types';
 import { useAppStore } from '@/store';
 import { sanitizeStreamUrl } from '@/utils';
@@ -221,20 +222,38 @@ class VlcService {
     headers: Record<string, string>,
     forceChooser: boolean
   ): Promise<boolean> {
-    const cleanUrl = sanitizeStreamUrl(streamUrl);
+    let cleanUrl = sanitizeStreamUrl(streamUrl);
     const resumePositionMs = Math.max(0, Math.floor(resumeSeconds * 1000));
     const userAgent = headers['User-Agent'] || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)';
 
+    // If local file:// URI, convert to content:// via FileProvider to avoid FileUriExposedException
+    if (cleanUrl.startsWith('file://')) {
+      try {
+        const contentUri = await FileSystem.getContentUriAsync(cleanUrl);
+        if (contentUri) {
+          cleanUrl = contentUri;
+          console.log(`[VLC] 📂 Resolved file URI to Content URI: ${cleanUrl}`);
+        }
+      } catch (e: any) {
+        console.warn('[VLC] ⚠️ Could not convert file URI to Content URI:', e?.message);
+      }
+    }
+
     // Intent parameters for VLC for Android and universal video players (MX Player, Just Player)
-    // flags 0x24000000 = FLAG_ACTIVITY_CLEAR_TOP (0x04000000) | FLAG_ACTIVITY_SINGLE_TOP (0x20000000)
-    // This clears any lingering background/previous playback in VLC and loads the new stream immediately.
+    // flags: FLAG_ACTIVITY_CLEAR_TOP (0x04000000) | FLAG_ACTIVITY_SINGLE_TOP (0x20000000)
+    // For content:// URIs: also include FLAG_GRANT_READ_URI_PERMISSION (0x00000001) | FLAG_GRANT_PREFIX_URI_PERMISSION (0x00000080)
+    const isContentUri = cleanUrl.startsWith('content://');
+    const flags = isContentUri ? 0x24000081 : 0x24000000;
+
     const intentParams: IntentLauncher.IntentLauncherParams = {
       data: cleanUrl,
       type: 'video/*',
-      flags: 0x24000000,
+      flags,
       extra: {
         title,
         itemTitle: title,
+        item_title: title,
+        'android.intent.extra.TITLE': title,
         position: resumePositionMs,
         from_start: resumeSeconds <= 0,
         return_result: true, // Requests exit position & duration in result extra
@@ -245,6 +264,7 @@ class VlcService {
 
     if (!forceChooser) {
       intentParams.packageName = 'org.videolan.vlc';
+      intentParams.className = 'org.videolan.vlc.StartActivity';
     }
 
     console.log(`[VLC] 🚀 Launching Android Intent:`, {
@@ -254,7 +274,7 @@ class VlcService {
       title,
       resumePositionMs,
       from_start: resumeSeconds <= 0,
-      flags: '0x24000000 (CLEAR_TOP | SINGLE_TOP)',
+      flags: `0x${flags.toString(16)} (${isContentUri ? 'GRANT_READ_URI | CLEAR_TOP | SINGLE_TOP' : 'CLEAR_TOP | SINGLE_TOP'})`,
     });
 
     try {

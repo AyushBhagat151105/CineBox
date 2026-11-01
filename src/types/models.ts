@@ -121,3 +121,43 @@ export interface FavoriteItem {
   mediaType: MediaType;
   addedAt: number;
 }
+
+export interface SearchHistoryItem {
+  id: string;
+  query: string;
+  timestamp: number;
+}
+
+export type DownloadStatus =
+  | 'queued'
+  | 'downloading'
+  | 'paused'
+  | 'completed'
+  | 'failed'
+  | 'cancelled';
+
+export interface DownloadItem {
+  id: string;
+  mediaId: string;
+  provider: ProviderId;
+  title: string;
+  releaseName: string;
+  quality?: string;
+  sizeFormatted?: string;
+  season?: number;
+  episode?: number;
+  fileUri: string;
+  localPosterUri?: string;
+  posterUrl?: string;
+  status: DownloadStatus;
+  bytesWritten: number;
+  totalBytes: number;
+  progressPercent: number;
+  downloadSpeed?: string;
+  estimatedTimeLeft?: string;
+  downloadUrl: string;
+  headers?: Record<string, string>;
+  error?: string;
+  completedAt?: number;
+  createdAt: number;
+}

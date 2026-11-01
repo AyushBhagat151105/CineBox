@@ -21,10 +21,10 @@ import {
   ProviderId,
   Release,
 } from '@/types';
-import { ProviderBadge, QualityBadge, ReleaseBadgeRow, TrailerPlayer, TrailerPlayerRef } from '@/components';
+import { ProviderBadge, QualityBadge, ReleaseBadgeRow, TrailerPlayer, TrailerPlayerRef, DownloadConfirmModal } from '@/components';
 import { useAppStore, usePlayerStore } from '@/store';
-import { cleanDisplayTitle } from '@/utils';
-import { vlcService } from '@/services';
+import { cleanDisplayTitle, normalizeShowTitle } from '@/utils';
+import { vlcService, downloaderService } from '@/services';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -55,6 +55,7 @@ export default function DetailsScreen() {
   const isFav = useAppStore((s) => s.favorites.some((f) => f.mediaId === mediaId));
   const toggleFavorite = useAppStore((s) => s.toggleFavorite);
   const getProgress = useAppStore((s) => s.getProgress);
+  const downloads = useAppStore((s) => s.downloads);
   const setPlayback = usePlayerStore((s) => s.setPlayback);
   const setAvailableReleases = usePlayerStore((s) => s.setAvailableReleases);
 
@@ -62,6 +63,10 @@ export default function DetailsScreen() {
   const [releases, setReleases] = useState<Release[]>([]);
   const [loadingReleases, setLoadingReleases] = useState(true);
   const [resolvingRelease, setResolvingRelease] = useState<string | null>(null);
+  const [pendingDownloadRelease, setPendingDownloadRelease] = useState<Release | null>(null);
+  const [downloadModalVisible, setDownloadModalVisible] = useState(false);
+  const [freeSpaceBytes, setFreeSpaceBytes] = useState<number>(10 * 1024 * 1024 * 1024);
+  const [isStartingDownload, setIsStartingDownload] = useState(false);
   const trailerRef = useRef<TrailerPlayerRef>(null);
 
   // Quality & Series Organization States
@@ -213,6 +218,21 @@ export default function DetailsScreen() {
     !currentActiveProgress.completed;
   const isWatched = Boolean(currentActiveProgress?.completed);
 
+  // Check if current media (or selected season/episode) is available offline
+  const isContentOffline = useMemo(() => {
+    return downloads.some((d) => {
+      if (d.status !== 'completed' || !d.fileUri) return false;
+      const isSeriesItem = selectedSeason !== undefined && selectedEpisode !== undefined;
+      if (isSeriesItem) {
+        if (d.season !== selectedSeason || d.episode !== selectedEpisode) return false;
+      }
+      return (
+        d.mediaId === mediaId ||
+        normalizeShowTitle(d.title) === normalizeShowTitle(paramTitle || details?.title || '')
+      );
+    });
+  }, [downloads, mediaId, selectedSeason, selectedEpisode, paramTitle, details?.title]);
+
   // Format seconds to "1h 45m" or "14m"
   const formatProgressTime = (sec: number) => {
     const h = Math.floor(sec / 3600);
@@ -281,6 +301,33 @@ export default function DetailsScreen() {
     console.log(`[Details] ▶️ User clicked Play for release: "${release.filename}"`);
     setResolvingRelease(release.filename);
     try {
+      const resumeSec = paramResumeSeconds
+        ? parseInt(paramResumeSeconds, 10)
+        : currentActiveProgress?.positionSeconds || 0;
+
+      // 0. Priority: If this release is already downloaded offline, play it directly!
+      const matchingDownload = downloads.find((d) => {
+        if (d.status !== 'completed' || !d.fileUri) return false;
+        if (release.season !== undefined && release.episode !== undefined) {
+          if (d.season !== release.season || d.episode !== release.episode) return false;
+        }
+        return (
+          d.releaseName === release.releaseName ||
+          d.releaseName === release.filename ||
+          (d.mediaId === mediaId && d.season === release.season && d.episode === release.episode) ||
+          normalizeShowTitle(d.title) === normalizeShowTitle(paramTitle || details?.title || '')
+        );
+      });
+
+      if (matchingDownload) {
+        console.log(`[Details] ⚡ Offline copy found for release "${release.releaseName}". Launching offline playback...`);
+        const launched = await downloaderService.playOffline(matchingDownload, resumeSec);
+        if (launched) {
+          setResolvingRelease(null);
+          return;
+        }
+      }
+
       // Find candidate mirrors for seamless auto-failover
       const candidates = [
         release,
@@ -294,9 +341,6 @@ export default function DetailsScreen() {
       console.log(`[Details] 📋 Prepared ${candidates.length} candidate(s) for playback failover`);
 
       const source = await aggregator.resolveWithFallback(candidates);
-      const resumeSec = paramResumeSeconds
-        ? parseInt(paramResumeSeconds, 10)
-        : currentActiveProgress?.positionSeconds || 0;
 
       console.log(`[Details] 🎯 Stream resolved successfully: ${source.url.slice(0, 80)}... (resume: ${resumeSec}s)`);
 
@@ -333,11 +377,34 @@ export default function DetailsScreen() {
     console.log(`[Details] ⚡ Quick Play initiated across pool of ${pool.length} release(s)`);
     setResolvingRelease('quick_play');
     try {
-      const source = await aggregator.resolveWithFallback(pool);
-      const chosenRelease = pool[0];
       const resumeSec = paramResumeSeconds
         ? parseInt(paramResumeSeconds, 10)
         : currentActiveProgress?.positionSeconds || 0;
+
+      // 0. Priority: Check if content is already downloaded and available offline
+      const offlineItem = downloads.find((d) => {
+        if (d.status !== 'completed' || !d.fileUri) return false;
+        const isSeries = selectedSeason !== undefined && selectedEpisode !== undefined;
+        if (isSeries) {
+          if (d.season !== selectedSeason || d.episode !== selectedEpisode) return false;
+        }
+        return (
+          d.mediaId === mediaId ||
+          normalizeShowTitle(d.title) === normalizeShowTitle(paramTitle || details?.title || '')
+        );
+      });
+
+      if (offlineItem) {
+        console.log(`[Details] ⚡ Offline copy found for "${offlineItem.title}". Launching offline playback at ${resumeSec}s...`);
+        const launched = await downloaderService.playOffline(offlineItem, resumeSec);
+        if (launched) {
+          setResolvingRelease(null);
+          return;
+        }
+      }
+
+      const source = await aggregator.resolveWithFallback(pool);
+      const chosenRelease = pool[0];
 
       console.log(`[Details] 🎯 Quick Play stream resolved: ${source.url.slice(0, 80)}... (resume: ${resumeSec}s)`);
 
@@ -365,6 +432,79 @@ export default function DetailsScreen() {
       Alert.alert('Auto-Play Failed', err.message || 'All mirrors exhausted');
     } finally {
       setResolvingRelease(null);
+    }
+  };
+
+  const getExistingDownloadForRelease = (rel: Release) => {
+    return downloads.find((d) => {
+      if (d.mediaId !== mediaId) return false;
+      if (rel.season !== undefined && rel.episode !== undefined) {
+        return d.season === rel.season && d.episode === rel.episode;
+      }
+      return d.releaseName === (rel.releaseName || rel.filename);
+    });
+  };
+
+  const handleInitiateDownload = async (rel: Release) => {
+    try {
+      const space = await downloaderService.getFreeDiskSpace();
+      setFreeSpaceBytes(space);
+      setPendingDownloadRelease(rel);
+      setDownloadModalVisible(true);
+    } catch (err: any) {
+      console.warn('[Details] Failed querying free storage:', err?.message);
+      setPendingDownloadRelease(rel);
+      setDownloadModalVisible(true);
+    }
+  };
+
+  const handleConfirmDownload = async () => {
+    if (!pendingDownloadRelease) return;
+    setIsStartingDownload(true);
+    try {
+      const rel = pendingDownloadRelease;
+      const candidates = [
+        rel,
+        ...releases.filter(
+          (r) =>
+            r !== rel &&
+            r.season === rel.season &&
+            r.episode === rel.episode
+        ),
+      ];
+      console.log(`[Details] 🔍 Resolving stream mirror for download...`);
+      const source = await aggregator.resolveWithFallback(candidates);
+
+      await downloaderService.startDownload({
+        mediaId,
+        title: cleanDisplayTitle(paramTitle || details?.title || rel.filename),
+        provider,
+        release: rel,
+        downloadUrl: source.url,
+        posterUrl: paramPosterUrl || details?.posterUrl,
+        headers: source.headers,
+        quality: rel.quality,
+        season: rel.season,
+        episode: rel.episode,
+        sizeBytes: rel.sizeBytes,
+      });
+
+      setDownloadModalVisible(false);
+      setPendingDownloadRelease(null);
+
+      Alert.alert(
+        'Download Started',
+        `"${cleanDisplayTitle(paramTitle || details?.title || rel.filename)}" has been queued. You can track progress in Downloads.`,
+        [
+          { text: 'Go to Downloads', onPress: () => router.push('/(tabs)/downloads') },
+          { text: 'Continue Browsing', style: 'cancel' },
+        ]
+      );
+    } catch (err: any) {
+      console.error('[Details] ❌ Download initiation failed:', err);
+      Alert.alert('Download Error', err?.message || 'Could not resolve media link for offline download.');
+    } finally {
+      setIsStartingDownload(false);
     }
   };
 
@@ -448,6 +588,12 @@ export default function DetailsScreen() {
                 {isSeries ? 'SERIES' : 'MOVIE'}
               </Text>
             </View>
+            {isContentOffline && (
+              <View style={styles.offlineDetailBadge}>
+                <Ionicons name="arrow-down-circle" size={13} color="#22c55e" />
+                <Text style={styles.offlineDetailText}>OFFLINE READY</Text>
+              </View>
+            )}
           </View>
 
           {/* Cinematic Title */}
@@ -462,11 +608,11 @@ export default function DetailsScreen() {
               style={[
                 styles.quickPlayBtn,
                 isWatched && styles.watchedPlayBtn,
-                releases.length === 0 && styles.disabledBtn,
+                releases.length === 0 && !isContentOffline && styles.disabledBtn,
                 focusedQuickPlay && styles.quickPlayBtnFocused,
               ]}
               onPress={handleQuickPlay}
-              disabled={releases.length === 0 || resolvingRelease !== null}>
+              disabled={(releases.length === 0 && !isContentOffline) || resolvingRelease !== null}>
               {resolvingRelease === 'quick_play' ? (
                 <ActivityIndicator color="#ffffff" size="small" />
               ) : (
@@ -480,7 +626,9 @@ export default function DetailsScreen() {
                     {isWatched
                       ? 'Watched · Watch Again'
                       : hasWatchProgress
-                      ? `Resume (${formatProgressTime(currentActiveProgress!.positionSeconds)})`
+                      ? `Resume ${isContentOffline ? '(Offline)' : ''} (${formatProgressTime(currentActiveProgress!.positionSeconds)})`
+                      : isContentOffline
+                      ? 'Play Offline'
                       : filteredReleases.length > 0
                       ? `Play ${filteredReleases[0].quality}`
                       : releases.length > 0
@@ -672,6 +820,7 @@ export default function DetailsScreen() {
               filteredReleases.map((rel, index) => {
                 const isResolving = resolvingRelease === rel.filename;
                 const isDual = /dual|hindi/i.test(rel.filename);
+                const existingDownload = getExistingDownloadForRelease(rel);
 
                 const relKey = `${rel.provider}_${index}`;
                 const isRelFocused = focusedRel === relKey;
@@ -720,14 +869,71 @@ export default function DetailsScreen() {
                       <Text style={styles.mirrorCount}>
                         {rel.mirrors.length} Mirror{rel.mirrors.length > 1 ? 's' : ''} (HubCloud / Direct)
                       </Text>
-                      {isResolving ? (
-                        <ActivityIndicator size="small" color="#e50914" />
-                      ) : (
-                        <View style={[styles.playLink, isRelFocused && styles.playLinkFocused]}>
-                          <Text style={[styles.playLinkText, isRelFocused && styles.playLinkTextFocused]}>STREAM</Text>
-                          <Ionicons name="chevron-forward" size={14} color={isRelFocused ? '#ffffff' : '#e50914'} />
-                        </View>
-                      )}
+
+                      <View style={styles.releaseActionsRow}>
+                        {/* Download / Offline Action Button */}
+                        {existingDownload ? (
+                          existingDownload.status === 'completed' ? (
+                            <Pressable
+                              focusable={true}
+                              hitSlop={6}
+                              style={styles.offlineReadyChip}
+                              onPress={(e) => {
+                                e.stopPropagation();
+                                downloaderService.playOffline(existingDownload);
+                              }}>
+                              <Ionicons name="checkmark-circle" size={13} color="#10b981" />
+                              <Text style={styles.offlineReadyText}>OFFLINE</Text>
+                            </Pressable>
+                          ) : existingDownload.status === 'downloading' ? (
+                            <Pressable
+                              focusable={true}
+                              hitSlop={6}
+                              style={styles.downloadingChip}
+                              onPress={(e) => {
+                                e.stopPropagation();
+                                router.push('/(tabs)/downloads');
+                              }}>
+                              <ActivityIndicator size="small" color="#3b82f6" style={{ transform: [{ scale: 0.7 }] }} />
+                              <Text style={styles.downloadingChipText}>{existingDownload.progressPercent}%</Text>
+                            </Pressable>
+                          ) : (
+                            <Pressable
+                              focusable={true}
+                              hitSlop={6}
+                              style={styles.downloadBtn}
+                              onPress={(e) => {
+                                e.stopPropagation();
+                                handleInitiateDownload(rel);
+                              }}>
+                              <Ionicons name="download-outline" size={13} color="#8a8a9e" />
+                              <Text style={styles.downloadBtnText}>RETRY</Text>
+                            </Pressable>
+                          )
+                        ) : (
+                          <Pressable
+                            focusable={true}
+                            hitSlop={6}
+                            style={styles.downloadBtn}
+                            onPress={(e) => {
+                              e.stopPropagation();
+                              handleInitiateDownload(rel);
+                            }}>
+                            <Ionicons name="download-outline" size={13} color="#8a8a9e" />
+                            <Text style={styles.downloadBtnText}>SAVE</Text>
+                          </Pressable>
+                        )}
+
+                        {/* Direct Stream Action */}
+                        {isResolving ? (
+                          <ActivityIndicator size="small" color="#e50914" />
+                        ) : (
+                          <View style={[styles.playLink, isRelFocused && styles.playLinkFocused]}>
+                            <Text style={[styles.playLinkText, isRelFocused && styles.playLinkTextFocused]}>STREAM</Text>
+                            <Ionicons name="play" size={11} color={isRelFocused ? '#ffffff' : '#e50914'} />
+                          </View>
+                        )}
+                      </View>
                     </View>
                   </Pressable>
                 );
@@ -751,6 +957,28 @@ export default function DetailsScreen() {
           </View>
         </View>
       </ScrollView>
+
+      {/* User Download Confirmation & Permission Modal */}
+      <DownloadConfirmModal
+        visible={downloadModalVisible}
+        onClose={() => {
+          if (!isStartingDownload) {
+            setDownloadModalVisible(false);
+            setPendingDownloadRelease(null);
+          }
+        }}
+        onConfirm={handleConfirmDownload}
+        title={cleanDisplayTitle(paramTitle || details?.title || pendingDownloadRelease?.filename || '')}
+        releaseName={pendingDownloadRelease?.releaseName || pendingDownloadRelease?.filename || ''}
+        quality={pendingDownloadRelease?.quality || '1080p'}
+        sizeFormatted={pendingDownloadRelease?.size}
+        sizeBytes={pendingDownloadRelease?.sizeBytes}
+        season={pendingDownloadRelease?.season}
+        episode={pendingDownloadRelease?.episode}
+        posterUrl={paramPosterUrl || details?.posterUrl}
+        freeSpaceBytes={freeSpaceBytes}
+        isStarting={isStartingDownload}
+      />
     </View>
   );
 }
@@ -850,6 +1078,23 @@ const styles = StyleSheet.create({
   },
   mediaTypeText: {
     color: '#e50914',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  offlineDetailBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(34, 197, 94, 0.15)',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(34, 197, 94, 0.4)',
+  },
+  offlineDetailText: {
+    color: '#4ade80',
     fontSize: 10,
     fontWeight: '800',
     letterSpacing: 0.5,
@@ -1196,6 +1441,61 @@ const styles = StyleSheet.create({
   mirrorCount: {
     color: '#777788',
     fontSize: 11,
+  },
+  releaseActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  downloadBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3.5,
+    borderRadius: 6,
+    backgroundColor: '#1c1c2b',
+    borderWidth: 1,
+    borderColor: '#2d2d42',
+  },
+  downloadBtnText: {
+    color: '#a0a0b2',
+    fontSize: 10.5,
+    fontWeight: '700',
+    letterSpacing: 0.4,
+  },
+  offlineReadyChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3.5,
+    paddingHorizontal: 7,
+    paddingVertical: 3.5,
+    borderRadius: 6,
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    borderWidth: 1,
+    borderColor: '#10b981',
+  },
+  offlineReadyText: {
+    color: '#10b981',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+  },
+  downloadingChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 3.5,
+    borderRadius: 6,
+    backgroundColor: 'rgba(59, 130, 246, 0.15)',
+    borderWidth: 1,
+    borderColor: '#3b82f6',
+  },
+  downloadingChipText: {
+    color: '#93c5fd',
+    fontSize: 10.5,
+    fontWeight: '700',
   },
   playLink: {
     flexDirection: 'row',

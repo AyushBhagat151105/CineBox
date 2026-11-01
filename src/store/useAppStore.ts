@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { FavoriteItem, WatchHistoryItem } from '@/types';
+import { DownloadItem, DownloadStatus, FavoriteItem, SearchHistoryItem, WatchHistoryItem } from '@/types';
 import { cleanMovieTitle } from '@/utils';
 
 export type PreferredPlayer = 'vlc' | 'chooser';
@@ -8,6 +8,8 @@ export type PreferredPlayer = 'vlc' | 'chooser';
 interface AppState {
   watchHistory: WatchHistoryItem[];
   favorites: FavoriteItem[];
+  searchHistory: SearchHistoryItem[];
+  downloads: DownloadItem[];
   preferredQuality: '4K' | '1080p' | '720p' | 'Auto';
   preferredLanguage: string;
   preferredPlayer: PreferredPlayer;
@@ -23,11 +25,22 @@ interface AppState {
   toggleFavorite: (item: Omit<FavoriteItem, 'addedAt'>) => Promise<void>;
   isFavorite: (mediaId: string) => boolean;
   clearHistory: () => Promise<void>;
+  addSearchQuery: (query: string) => Promise<void>;
+  removeSearchQuery: (id: string) => Promise<void>;
+  clearSearchHistory: () => Promise<void>;
+  addDownload: (item: DownloadItem) => Promise<void>;
+  updateDownload: (id: string, updates: Partial<DownloadItem>) => void;
+  persistDownloads: () => Promise<void>;
+  removeDownload: (id: string) => Promise<void>;
+  clearCompletedDownloads: () => Promise<void>;
+  getDownload: (mediaId: string, season?: number, episode?: number) => DownloadItem | undefined;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
   watchHistory: [],
   favorites: [],
+  searchHistory: [],
+  downloads: [],
   preferredQuality: 'Auto',
   preferredLanguage: 'Hindi',
   preferredPlayer: 'vlc',
@@ -36,11 +49,13 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   loadStorage: async () => {
     try {
-      const [historyJson, favsJson, skipStr, playerStr] = await Promise.all([
+      const [historyJson, favsJson, skipStr, playerStr, searchJson, downloadsJson] = await Promise.all([
         AsyncStorage.getItem('@cinebox_history'),
         AsyncStorage.getItem('@cinebox_favorites'),
         AsyncStorage.getItem('@cinebox_skip_seconds'),
         AsyncStorage.getItem('@cinebox_preferred_player'),
+        AsyncStorage.getItem('@cinebox_search_history'),
+        AsyncStorage.getItem('@cinebox_downloads'),
       ]);
 
       let parsedHistory: WatchHistoryItem[] = historyJson ? JSON.parse(historyJson) : [];
@@ -58,10 +73,21 @@ export const useAppStore = create<AppState>((set, get) => ({
         AsyncStorage.setItem('@cinebox_history', JSON.stringify(sanitizedHistory)).catch(() => {});
       }
 
-      console.log(`[Store] 📦 loadStorage finished. Loaded ${sanitizedHistory.length} history item(s)`);
+      // Parse and sanitize downloads: interrupted downloads become paused
+      let parsedDownloads: DownloadItem[] = downloadsJson ? JSON.parse(downloadsJson) : [];
+      const sanitizedDownloads = parsedDownloads.map((item) => {
+        if (item.status === 'downloading' || item.status === 'queued') {
+          return { ...item, status: 'paused' as DownloadStatus };
+        }
+        return item;
+      });
+
+      console.log(`[Store] 📦 loadStorage finished. Loaded ${sanitizedHistory.length} history, ${sanitizedDownloads.length} downloads:`, JSON.stringify(sanitizedDownloads));
       set({
         watchHistory: sanitizedHistory,
         favorites: favsJson ? JSON.parse(favsJson) : [],
+        searchHistory: searchJson ? JSON.parse(searchJson) : [],
+        downloads: sanitizedDownloads,
         skipSeconds: skipStr ? parseInt(skipStr, 10) : 10,
         preferredPlayer: (playerStr as PreferredPlayer) || 'vlc',
         isLoaded: true,
@@ -70,6 +96,37 @@ export const useAppStore = create<AppState>((set, get) => ({
       console.warn('[Store] ⚠️ Failed to load storage:', err?.message);
       set({ isLoaded: true });
     }
+  },
+
+  addSearchQuery: async (rawQuery: string) => {
+    const trimmed = rawQuery.trim();
+    if (trimmed.length < 2) return;
+
+    const current = get().searchHistory;
+    const filtered = current.filter(
+      (item) => item.query.toLowerCase() !== trimmed.toLowerCase()
+    );
+
+    const newItem: SearchHistoryItem = {
+      id: `${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      query: trimmed,
+      timestamp: Date.now(),
+    };
+
+    const updated = [newItem, ...filtered].slice(0, 20);
+    set({ searchHistory: updated });
+    await AsyncStorage.setItem('@cinebox_search_history', JSON.stringify(updated));
+  },
+
+  removeSearchQuery: async (id: string) => {
+    const updated = get().searchHistory.filter((item) => item.id !== id);
+    set({ searchHistory: updated });
+    await AsyncStorage.setItem('@cinebox_search_history', JSON.stringify(updated));
+  },
+
+  clearSearchHistory: async () => {
+    set({ searchHistory: [] });
+    await AsyncStorage.removeItem('@cinebox_search_history');
   },
 
   setSkipSeconds: async (seconds: number) => {
@@ -157,5 +214,48 @@ export const useAppStore = create<AppState>((set, get) => ({
   clearHistory: async () => {
     set({ watchHistory: [] });
     await AsyncStorage.removeItem('@cinebox_history');
+  },
+
+  addDownload: async (item: DownloadItem) => {
+    const current = get().downloads;
+    const filtered = current.filter((d) => d.id !== item.id);
+    const updated = [item, ...filtered];
+    set({ downloads: updated });
+    await AsyncStorage.setItem('@cinebox_downloads', JSON.stringify(updated));
+  },
+
+  updateDownload: (id: string, updates: Partial<DownloadItem>) => {
+    const current = get().downloads;
+    const updated = current.map((d) => (d.id === id ? { ...d, ...updates } : d));
+    set({ downloads: updated });
+  },
+
+  persistDownloads: async () => {
+    const current = get().downloads;
+    await AsyncStorage.setItem('@cinebox_downloads', JSON.stringify(current));
+  },
+
+  removeDownload: async (id: string) => {
+    const current = get().downloads;
+    const updated = current.filter((d) => d.id !== id);
+    set({ downloads: updated });
+    await AsyncStorage.setItem('@cinebox_downloads', JSON.stringify(updated));
+  },
+
+  clearCompletedDownloads: async () => {
+    const current = get().downloads;
+    const updated = current.filter((d) => d.status !== 'completed');
+    set({ downloads: updated });
+    await AsyncStorage.setItem('@cinebox_downloads', JSON.stringify(updated));
+  },
+
+  getDownload: (mediaId: string, season?: number, episode?: number) => {
+    const downloads = get().downloads;
+    if (season !== undefined && episode !== undefined) {
+      return downloads.find(
+        (d) => d.mediaId === mediaId && d.season === season && d.episode === episode
+      );
+    }
+    return downloads.find((d) => d.mediaId === mediaId);
   },
 }));

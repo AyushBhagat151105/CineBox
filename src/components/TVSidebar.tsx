@@ -7,7 +7,7 @@ interface NavItem {
   id: string;
   label: string;
   icon: keyof typeof Ionicons.glyphMap;
-  path: '/(tabs)' | '/(tabs)/search' | '/(tabs)/favorites' | '/(tabs)/settings';
+  path: '/(tabs)' | '/(tabs)/search' | '/(tabs)/favorites' | '/(tabs)/settings' | '/(tabs)/downloads';
 }
 
 const TOP_NAV_ITEMS: NavItem[] = [
@@ -16,6 +16,7 @@ const TOP_NAV_ITEMS: NavItem[] = [
 ];
 
 const BOTTOM_NAV_ITEMS: NavItem[] = [
+  { id: 'downloads', label: 'Downloads', icon: 'download-outline', path: '/(tabs)/downloads' },
   { id: 'favorites', label: 'Watchlist', icon: 'bookmark', path: '/(tabs)/favorites' },
   { id: 'settings', label: 'Settings', icon: 'settings-sharp', path: '/(tabs)/settings' },
 ];

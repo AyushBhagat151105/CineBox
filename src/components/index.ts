@@ -7,3 +7,4 @@ export * from './TrailerPlayer';
 export * from './RewardedAdModal';
 export * from './UpdateModal';
 export * from './TVSidebar';
+export * from './DownloadConfirmModal';

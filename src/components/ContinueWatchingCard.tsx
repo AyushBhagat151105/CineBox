@@ -1,11 +1,11 @@
 import { aggregator } from '@/providers';
-import { vlcService } from '@/services';
+import { vlcService, downloaderService } from '@/services';
 import { useAppStore, usePlayerStore } from '@/store';
 import { WatchHistoryItem } from '@/types';
-import { cleanDisplayTitle } from '@/utils';
+import { cleanDisplayTitle, normalizeShowTitle } from '@/utils';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -31,6 +31,24 @@ export const ContinueWatchingCard: React.FC<ContinueWatchingCardProps> = React.m
 
   const removeFromHistory = useAppStore((s) => s.removeFromHistory);
   const preferredPlayer = useAppStore((s) => s.preferredPlayer);
+  const downloads = useAppStore((s) => s.downloads);
+
+  // Check if this item is downloaded and available offline on disk
+  const offlineDownload = useMemo(() => {
+    return downloads.find((d) => {
+      if (d.status !== 'completed' || !d.fileUri) return false;
+      const isSeriesItem = item.season !== undefined && item.episode !== undefined;
+      if (isSeriesItem) {
+        if (d.season !== item.season || d.episode !== item.episode) return false;
+      }
+      return (
+        d.mediaId === item.mediaId ||
+        normalizeShowTitle(d.title) === normalizeShowTitle(item.title)
+      );
+    });
+  }, [downloads, item.mediaId, item.season, item.episode, item.title]);
+
+  const isOffline = !!offlineDownload;
 
   const progressPercent =
     item.durationSeconds > 0
@@ -44,6 +62,16 @@ export const ContinueWatchingCard: React.FC<ContinueWatchingCardProps> = React.m
     if (isResuming) return;
     setIsResuming(true);
     try {
+      // 0. Priority: If offline copy exists, launch directly without network calls!
+      if (offlineDownload) {
+        console.log(`[ContinueWatching] ⚡ Playing offline downloaded media for "${item.title}" at ${item.positionSeconds}s`);
+        const launched = await downloaderService.playOffline(offlineDownload, item.positionSeconds);
+        if (launched) {
+          setIsResuming(false);
+          return;
+        }
+      }
+
       // 1. Fetch available releases for this item
       const releases = await aggregator.getAllReleases([
         { provider: item.provider, id: item.mediaId },
@@ -143,17 +171,23 @@ export const ContinueWatchingCard: React.FC<ContinueWatchingCardProps> = React.m
           </View>
         )}
 
-        {/* Top Floating Badges (Series Episode & Provider) */}
+        {/* Top Floating Badges (Series Episode, Offline Badge & Provider) */}
         <View style={styles.topBadgeRow}>
-          {isSeries ? (
-            <View style={styles.seriesPill}>
-              <Text style={styles.seriesPillText}>
-                S{item.season}:E{item.episode}
-              </Text>
-            </View>
-          ) : (
-            <View />
-          )}
+          <View style={styles.leftBadges}>
+            {isSeries && (
+              <View style={styles.seriesPill}>
+                <Text style={styles.seriesPillText}>
+                  S{item.season}:E{item.episode}
+                </Text>
+              </View>
+            )}
+            {isOffline && (
+              <View style={styles.offlineBadge}>
+                <Ionicons name="arrow-down-circle" size={13} color="#22c55e" />
+                <Text style={styles.offlineBadgeText}>OFFLINE</Text>
+              </View>
+            )}
+          </View>
           <ProviderBadge provider={item.provider} size="small" />
         </View>
 
@@ -248,6 +282,28 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     zIndex: 2,
+  },
+  leftBadges: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  offlineBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3.5,
+    backgroundColor: 'rgba(15, 23, 42, 0.9)',
+    paddingHorizontal: 6.5,
+    paddingVertical: 2.5,
+    borderRadius: 5,
+    borderWidth: 1,
+    borderColor: 'rgba(34, 197, 94, 0.6)',
+  },
+  offlineBadgeText: {
+    color: '#4ade80',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.5,
   },
   seriesPill: {
     backgroundColor: 'rgba(229, 9, 20, 0.9)',
