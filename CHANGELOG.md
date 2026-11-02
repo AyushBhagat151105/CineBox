@@ -14,6 +14,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v2.0.5] - 2026-11-02
+
+### 🚀 Highlights
+- **TV Series Bulk Queue Downloading**:
+  - **Sequential Step-by-Step Queue**: Queue entire TV series seasons with single-concurrency (`1 by 1`) sequential downloading, avoiding bandwidth congestion and server timeouts.
+  - **Season Editions Clustering**: Automatically clusters individual episode releases into unified season editions (e.g., 4K REMUX, 4K HDR/DV, 1080p REMUX, 1080p WEB-DL, 1080p HEVC) with per-episode and total estimated size calculation.
+  - **Just-In-Time (JIT) Stream Resolution**: Resolves fresh direct Google CDN mirrors right when each episode begins downloading, avoiding link expiration.
+- **Background Downloads with CPU WakeLock**:
+  - Automatically acquires `PARTIAL_WAKE_LOCK` to keep network and CPU alive at full 13 MB/s+ speeds even when the app is minimized or the screen is locked.
+- **Live Android System Notifications**:
+  - Real-time ongoing notification in Android status shade displaying progress bar, download speed (MB/s), remaining ETA, and queue count.
+  - Dedicated auto-canceling completion notifications upon episode completion.
+- **Permanent File Deletion & MediaStore Sync**:
+  - Native filesystem removal combined with ContentResolver deletion from `MediaStore.Video`, `MediaStore.Downloads`, and `MediaStore.Files`.
+  - Immediate `MediaScannerConnection` refresh so deleted media files vanish from external File Managers (Samsung My Files, Google Files) instantly.
+- **Native VLC Intent Playback**:
+  - Clean `Intent.ACTION_VIEW` stream handoff matching MovieBox-TUI for native timeline scrubbing and gesture skipping.
+
+---
+
 ## [v2.0.1] - 2026-11-02
 
 ### 🚀 Highlights

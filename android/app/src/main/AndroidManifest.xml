@@ -12,8 +12,16 @@
   <uses-permission android:name="android.permission.READ_MEDIA_VIDEO"/>
   <uses-permission android:name="android.permission.READ_MEDIA_AUDIO"/>
   <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
+  <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" tools:ignore="ScopedStorage"/>
+  <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
   <queries>
     <package android:name="org.videolan.vlc"/>
+    <package android:name="com.mxtech.videoplayer.ad"/>
+    <package android:name="com.mxtech.videoplayer.pro"/>
+    <package android:name="com.brouken.player"/>
+    <package android:name="is.xyz.mpv"/>
     <intent>
       <action android:name="android.intent.action.VIEW"/>
       <data android:mimeType="video/*"/>

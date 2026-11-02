@@ -73,11 +73,14 @@ export class AggregatorService {
     return allReleases.sort((a, b) => b.resolution - a.resolution);
   }
 
-  // 3. Pre-flight Validation: Verify stream URL is playable and reject ad/interstitial pages
-  async probeStream(url: string, headers?: Record<string, string>): Promise<boolean> {
+  // 3. Pre-flight Validation: Verify stream URL is playable, reachable, and supports HTTP 206 byte-range seeking
+  async probeStream(
+    url: string,
+    headers?: Record<string, string>
+  ): Promise<{ isHealthy: boolean; isSeekable: boolean; status: number }> {
     if (!url || typeof url !== 'string' || !url.startsWith('http')) {
       console.warn(`[Aggregator] ⚠️ Preflight probe rejected invalid or non-HTTP URL: "${url}"`);
-      return false;
+      return { isHealthy: false, isSeekable: false, status: 0 };
     }
 
     const lower = url.toLowerCase();
@@ -96,58 +99,67 @@ export class AggregatorService {
       (lower.includes('hubcloud.') && (lower.includes('/drive/') || lower.includes('/file/')))
     ) {
       console.warn(`[Aggregator] ⚠️ Preflight probe rejected intermediate / shortener landing page: ${url}`);
-      return false;
+      return { isHealthy: false, isSeekable: false, status: 0 };
     }
 
     // Reject HTML/PHP web pages immediately
     if (lower.endsWith('.html') || lower.endsWith('.php')) {
       console.warn(`[Aggregator] ⚠️ Preflight probe rejected HTML/PHP endpoint: ${url}`);
-      return false;
+      return { isHealthy: false, isSeekable: false, status: 0 };
     }
 
-    // Verify Cloudflare R2 / S3 storage URLs are active and not returning 403 Forbidden
-    if (lower.includes('cloudflarestorage.com') || lower.includes('.r2.dev')) {
-      try {
-        const probeRes = await axios.head(url, {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-            ...(headers || {}),
-          },
-          timeout: 2500,
-          validateStatus: (s) => s >= 200 && s < 400,
-        });
-        if (probeRes.status >= 200 && probeRes.status < 400) {
-          console.log(`[Aggregator] ✅ Preflight probe confirmed R2 stream active (${probeRes.status}): ${url.slice(0, 70)}...`);
-          return true;
-        }
-      } catch (r2Err: any) {
-        console.warn(`[Aggregator] ❌ Preflight probe rejected inactive R2 stream (${r2Err.response?.status || r2Err.message}): ${url.slice(0, 70)}...`);
-        return false;
+    // Send a lightweight Range probe (bytes=0-10) with 3.5s timeout.
+    // Abort controller ensures we never buffer multi-gigabyte video into memory.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 3500);
+
+    try {
+      const probeRes = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          Range: 'bytes=0-10',
+          ...(headers || {}),
+        },
+        signal: controller.signal,
+      });
+
+      clearTimeout(timer);
+      const status = probeRes.status;
+      const contentRange = probeRes.headers.get('content-range');
+      const isSeekable = status === 206 || !!contentRange;
+      const isHealthy = status >= 200 && status < 400;
+
+      // Abort body immediately to prevent downloading
+      controller.abort();
+
+      if (isHealthy) {
+        console.log(
+          `[Aggregator] ✅ Preflight probe confirmed stream active (HTTP ${status}, seekable: ${isSeekable}): ${url.slice(0, 70)}...`
+        );
+      } else {
+        console.warn(`[Aggregator] ❌ Preflight probe rejected stream (HTTP ${status}): ${url.slice(0, 70)}...`);
       }
-    }
 
-    // Direct streams, CDNs, and media file extensions are immediately valid playback URLs
-    if (
-      lower.includes('workers.dev') ||
-      lower.includes('googleusercontent.com') ||
-      lower.includes('hbplay') ||
-      lower.includes('.mkv') ||
-      lower.includes('.mp4') ||
-      lower.includes('.webm') ||
-      (lower.includes('pixeldrain.') && (lower.includes('api/file') || lower.includes('?download')))
-    ) {
-      console.log(`[Aggregator] ✅ Preflight probe APPROVED direct media stream URL: ${url}`);
-      return true;
+      return { isHealthy, isSeekable, status };
+    } catch (err: any) {
+      clearTimeout(timer);
+      console.warn(`[Aggregator] ⚠️ Preflight probe network error (${err?.message}): ${url.slice(0, 70)}...`);
+      const isKnownMedia =
+        lower.includes('.mkv') ||
+        lower.includes('.mp4') ||
+        lower.includes('googleusercontent.com') ||
+        lower.includes('pixeldrain.');
+      return { isHealthy: isKnownMedia, isSeekable: false, status: 0 };
     }
-
-    console.log(`[Aggregator] ✅ Preflight probe APPROVED URL: ${url}`);
-    return true;
   }
 
   // 4. Resolve Stream with Seamless Auto-Fallback across candidate releases
   async resolveWithFallback(releases: Release[]): Promise<PlaybackSource> {
     console.log(`[Aggregator] 🎬 Starting stream resolution across ${releases.length} candidate release(s)...`);
     const errors: string[] = [];
+    let unseekableFallback: PlaybackSource | null = null;
 
     for (let i = 0; i < releases.length; i++) {
       const release = releases[i];
@@ -166,13 +178,25 @@ export class AggregatorService {
         if (source && source.url) {
           source.url = sanitizeStreamUrl(source.url);
           console.log(`[Aggregator] 🔍 [${i + 1}/${releases.length}] Obtained resolved source: ${source.url.slice(0, 80)}...`);
-          const isHealthy = await this.probeStream(source.url, source.headers);
-          if (isHealthy) {
-            console.log(`[Aggregator] 🎉 [${i + 1}/${releases.length}] SUCCESS! Playing "${release.filename}" via ${source.sourceLabel || 'Direct Stream'}`);
-            return source;
+          const probe = await this.probeStream(source.url, source.headers);
+          if (probe.isHealthy) {
+            if (probe.isSeekable) {
+              console.log(
+                `[Aggregator] 🎉 [${i + 1}/${releases.length}] SUCCESS! Playing "${release.filename}" via ${source.sourceLabel || 'Direct Stream'} (100% Seekable HTTP 206)`
+              );
+              return source;
+            } else {
+              console.warn(
+                `[Aggregator] ⚠️ [${i + 1}/${releases.length}] Stream is unseekable HTTP 200 (timeline scrub disabled), saving as fallback...`
+              );
+              if (!unseekableFallback) {
+                unseekableFallback = source;
+              }
+            }
+          } else {
+            console.warn(`[Aggregator] ❌ [${i + 1}/${releases.length}] Preflight validation failed for "${release.filename}", trying next candidate...`);
+            errors.push(`${release.filename} failed preflight validation`);
           }
-          console.warn(`[Aggregator] ❌ [${i + 1}/${releases.length}] Preflight validation failed for "${release.filename}", trying next candidate...`);
-          errors.push(`${release.filename} failed preflight validation`);
         } else {
           console.warn(`[Aggregator] ❌ [${i + 1}/${releases.length}] No source returned for "${release.filename}"`);
           errors.push(`${release.filename} returned empty source`);
@@ -182,6 +206,11 @@ export class AggregatorService {
         errors.push(`${release.filename}: ${err?.message || 'resolution failed'}`);
         continue;
       }
+    }
+
+    if (unseekableFallback) {
+      console.log(`[Aggregator] ⚠️ No seekable candidate found; using unseekable fallback: ${unseekableFallback.url.slice(0, 80)}...`);
+      return unseekableFallback;
     }
 
     console.error(`[Aggregator] 💥 All ${releases.length} candidates failed!`);

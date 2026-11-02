@@ -141,6 +141,7 @@ export default function DownloadsScreen() {
     const isDownloading = item.status === 'downloading';
     const isPaused = item.status === 'paused';
     const isFailed = item.status === 'failed';
+    const isQueued = item.status === 'queued';
     const isCardFocused = focusedId === item.id;
 
     const posterSource = item.localPosterUri
@@ -206,6 +207,31 @@ export default function DownloadsScreen() {
               <Ionicons name="checkmark-circle" size={14} color="#10b981" />
               <Text style={styles.readyText}>Ready for offline playback</Text>
             </View>
+          ) : isQueued ? (
+            <View style={styles.progressContainer}>
+              <View style={styles.progressTrack}>
+                <View
+                  style={[
+                    styles.progressFill,
+                    {
+                      width: '100%',
+                      backgroundColor: '#3b82f6',
+                      opacity: 0.25,
+                    },
+                  ]}
+                />
+              </View>
+
+              <View style={styles.progressStatsRow}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                  <Ionicons name="time-outline" size={12} color="#60a5fa" />
+                  <Text style={[styles.percentText, { color: '#60a5fa', fontWeight: '700' }]}>
+                    In Queue
+                  </Text>
+                </View>
+                <Text style={styles.speedText}>Waiting turn (step-by-step)</Text>
+              </View>
+            </View>
           ) : (
             <View style={styles.progressContainer}>
               <View style={styles.progressTrack}>
@@ -260,7 +286,15 @@ export default function DownloadsScreen() {
             </View>
           ) : (
             <View style={styles.activeActions}>
-              {isDownloading ? (
+              {isQueued ? (
+                <Pressable
+                  hitSlop={8}
+                  focusable={true}
+                  onPress={() => handleDelete(item)}
+                  style={styles.iconBtn}>
+                  <Ionicons name="close-circle-outline" size={20} color="#8a8a9e" />
+                </Pressable>
+              ) : isDownloading ? (
                 <Pressable
                   hitSlop={8}
                   focusable={true}
@@ -277,13 +311,15 @@ export default function DownloadsScreen() {
                   <Ionicons name="play" size={17} color="#ffffff" />
                 </Pressable>
               )}
-              <Pressable
-                hitSlop={8}
-                focusable={true}
-                onPress={() => handleDelete(item)}
-                style={styles.iconBtn}>
-                <Ionicons name="close" size={18} color="#8a8a9e" />
-              </Pressable>
+              {!isQueued && (
+                <Pressable
+                  hitSlop={8}
+                  focusable={true}
+                  onPress={() => handleDelete(item)}
+                  style={styles.iconBtn}>
+                  <Ionicons name="close" size={18} color="#8a8a9e" />
+                </Pressable>
+              )}
             </View>
           )}
         </View>

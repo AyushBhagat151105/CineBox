@@ -101,8 +101,6 @@ export const ContinueWatchingCard: React.FC<ContinueWatchingCardProps> = React.m
           releaseName: candidates[0]?.releaseName || item.releaseName,
           season: item.season,
           episode: item.episode,
-          resumeSeconds: item.positionSeconds,
-          durationSeconds: item.durationSeconds,
           headers: source.headers,
           forceChooser: preferredPlayer === 'chooser',
         });

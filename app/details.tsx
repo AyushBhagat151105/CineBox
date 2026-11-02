@@ -21,7 +21,7 @@ import {
   ProviderId,
   Release,
 } from '@/types';
-import { ProviderBadge, QualityBadge, ReleaseBadgeRow, TrailerPlayer, TrailerPlayerRef, DownloadConfirmModal } from '@/components';
+import { ProviderBadge, QualityBadge, ReleaseBadgeRow, TrailerPlayer, TrailerPlayerRef, DownloadConfirmModal, SeasonDownloadModal } from '@/components';
 import { useAppStore, usePlayerStore } from '@/store';
 import { cleanDisplayTitle, normalizeShowTitle } from '@/utils';
 import { vlcService, downloaderService } from '@/services';
@@ -65,6 +65,8 @@ export default function DetailsScreen() {
   const [resolvingRelease, setResolvingRelease] = useState<string | null>(null);
   const [pendingDownloadRelease, setPendingDownloadRelease] = useState<Release | null>(null);
   const [downloadModalVisible, setDownloadModalVisible] = useState(false);
+  const [seasonDownloadModalVisible, setSeasonDownloadModalVisible] = useState(false);
+  const [seasonToDownload, setSeasonToDownload] = useState<number>(1);
   const [freeSpaceBytes, setFreeSpaceBytes] = useState<number>(10 * 1024 * 1024 * 1024);
   const [isStartingDownload, setIsStartingDownload] = useState(false);
   const trailerRef = useRef<TrailerPlayerRef>(null);
@@ -175,6 +177,12 @@ export default function DetailsScreen() {
     return Array.from(eps).sort((a, b) => a - b);
   }, [releases, selectedSeason]);
 
+  // Check if current media title / ID indicates an IMAX edition
+  const isMediaImax = useMemo(() => {
+    const combined = `${details?.title || ''} ${paramTitle || ''} ${mediaId || ''}`.toUpperCase();
+    return combined.includes('IMAX');
+  }, [details?.title, paramTitle, mediaId]);
+
   // Filtered releases based on Season, Episode and Quality
   const filteredReleases = useMemo(() => {
     return releases.filter((r) => {
@@ -192,9 +200,13 @@ export default function DetailsScreen() {
         if (r.episode !== selectedEpisode) return false;
       }
 
-      // 3. Quality filter
+      // 3. Quality & Edition filter
       if (selectedQuality !== 'all') {
         const q = (r.quality || '').toLowerCase();
+        const f = `${r.filename || ''} ${r.releaseName || ''} ${r.quality || ''}`.toUpperCase();
+        const isImaxRelease = f.includes('IMAX') || isMediaImax;
+        if (selectedQuality === 'imax' && !isImaxRelease) return false;
+        if (selectedQuality === 'remux' && !f.includes('REMUX')) return false;
         if (selectedQuality === '4k' && !q.includes('4k') && !q.includes('2160')) return false;
         if (selectedQuality === '1080p' && !q.includes('1080')) return false;
         if (selectedQuality === '720p' && !q.includes('720')) return false;
@@ -203,7 +215,7 @@ export default function DetailsScreen() {
 
       return true;
     });
-  }, [releases, isSeries, availableSeasons, selectedSeason, selectedEpisode, selectedQuality]);
+  }, [releases, isSeries, availableSeasons, selectedSeason, selectedEpisode, selectedQuality, isMediaImax]);
 
   // Active watch progress for dynamic Resume / Watched status
   const currentActiveProgress = useMemo(() => {
@@ -243,6 +255,8 @@ export default function DetailsScreen() {
 
   // Quality counts for badges
   const qualityCounts = useMemo(() => {
+    let countImax = 0;
+    let countRemux = 0;
     let count4k = 0;
     let count1080 = 0;
     let count720 = 0;
@@ -250,24 +264,32 @@ export default function DetailsScreen() {
 
     for (const r of releases) {
       const q = (r.quality || '').toLowerCase();
+      const f = `${r.filename || ''} ${r.releaseName || ''} ${r.quality || ''}`.toUpperCase();
+      if (f.includes('IMAX') || isMediaImax) countImax++;
+      if (f.includes('REMUX')) countRemux++;
       if (q.includes('4k') || q.includes('2160')) count4k++;
       else if (q.includes('1080')) count1080++;
       else if (q.includes('720')) count720++;
       else if (q.includes('480')) count480++;
     }
 
-    return { total: releases.length, count4k, count1080, count720, count480 };
-  }, [releases]);
+    return { total: releases.length, countImax, countRemux, count4k, count1080, count720, count480 };
+  }, [releases, isMediaImax]);
 
   // Options lists for horizontal TV FlatLists
   const qualityOptions = useMemo(() => {
     const opts = [{ id: 'all', label: `All (${qualityCounts.total})` }];
+    // IMAX filter is always visible on 4KHDHub (and whenever IMAX prints are detected)
+    if (qualityCounts.countImax > 0 || provider === 'fourkhdhub') {
+      opts.push({ id: 'imax', label: `IMAX (${qualityCounts.countImax})` });
+    }
+    if (qualityCounts.countRemux > 0) opts.push({ id: 'remux', label: `REMUX (${qualityCounts.countRemux})` });
     if (qualityCounts.count4k > 0) opts.push({ id: '4k', label: `4K UHD (${qualityCounts.count4k})` });
     if (qualityCounts.count1080 > 0) opts.push({ id: '1080p', label: `1080p FHD (${qualityCounts.count1080})` });
     if (qualityCounts.count720 > 0) opts.push({ id: '720p', label: `720p HD (${qualityCounts.count720})` });
     if (qualityCounts.count480 > 0) opts.push({ id: '480p', label: `480p (${qualityCounts.count480})` });
     return opts;
-  }, [qualityCounts]);
+  }, [qualityCounts, provider]);
 
   const seasonOptions = useMemo(() => {
     const opts: Array<{ id: number | 'packs' | 'all'; label: string }> = availableSeasons.seasons.map((s) => ({
@@ -724,7 +746,33 @@ export default function DetailsScreen() {
             {/* Season Tabs (for TV Series) */}
             {isSeries && seasonOptions.length > 0 && (
               <View style={styles.seasonsSection}>
-                <Text style={styles.subSectionTitle}>SEASONS</Text>
+                <View style={styles.seasonsHeaderRow}>
+                  <Text style={styles.subSectionTitle}>SEASONS</Text>
+                  <Pressable
+                    focusable={true}
+                    style={({ pressed }) => [
+                      styles.bulkDownloadBtn,
+                      pressed && styles.bulkDownloadBtnPressed,
+                    ]}
+                    onPress={() => {
+                      const sNum =
+                        typeof selectedSeason === 'number'
+                          ? selectedSeason
+                          : availableSeasons.seasons[0] || 1;
+                      setSeasonToDownload(sNum);
+                      setSeasonDownloadModalVisible(true);
+                    }}>
+                    <Ionicons
+                      name="cloud-download-outline"
+                      size={13}
+                      color="#ffffff"
+                      style={{ marginRight: 5 }}
+                    />
+                    <Text style={styles.bulkDownloadBtnText}>
+                      Download Season {typeof selectedSeason === 'number' ? selectedSeason : availableSeasons.seasons[0] || 1}
+                    </Text>
+                  </Pressable>
+                </View>
                 <FlatList
                   horizontal
                   showsHorizontalScrollIndicator={false}
@@ -979,6 +1027,27 @@ export default function DetailsScreen() {
         freeSpaceBytes={freeSpaceBytes}
         isStarting={isStartingDownload}
       />
+
+      {/* Bulk Season Queue Download Modal */}
+      {isSeries && (
+        <SeasonDownloadModal
+          visible={seasonDownloadModalVisible}
+          onClose={() => setSeasonDownloadModalVisible(false)}
+          title={cleanDisplayTitle(paramTitle || details?.title || '')}
+          provider={provider}
+          mediaId={mediaId}
+          posterUrl={paramPosterUrl || details?.posterUrl}
+          availableSeasons={availableSeasons.seasons}
+          initialSeason={seasonToDownload}
+          releases={releases}
+          onSeasonQueued={(sNum, count) => {
+            Alert.alert(
+              'Season Queued for Download',
+              `Queued ${count} episodes of Season ${sNum}.\n\nEpisodes will download sequentially step-by-step in the background with live notification progress.`
+            );
+          }}
+        />
+      )}
     </View>
   );
 }
@@ -1288,6 +1357,31 @@ const styles = StyleSheet.create({
   seasonsSection: {
     marginBottom: 14,
     overflow: 'visible',
+  },
+  seasonsHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  bulkDownloadBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(229, 9, 20, 0.15)',
+    borderWidth: 1,
+    borderColor: '#e50914',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+  },
+  bulkDownloadBtnPressed: {
+    backgroundColor: 'rgba(229, 9, 20, 0.35)',
+  },
+  bulkDownloadBtnText: {
+    color: '#ffffff',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.2,
   },
   seasonTab: {
     backgroundColor: '#161622',

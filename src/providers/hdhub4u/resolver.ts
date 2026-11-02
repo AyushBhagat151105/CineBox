@@ -63,14 +63,17 @@ export function extractGreenmotorsPayload(html: string): string | null {
 }
 
 /**
- * Fast reachability check (HEAD / byte-range GET) for Cloudflare R2 / direct stream links.
- * Catches 403 Forbidden (suspended R2 accounts / expired URLs) and 404s before handing to VLC.
+ * Fast reachability check (HEAD / byte-range GET) for Cloudflare Workers / R2 / direct stream links.
+ * Catches 403 Forbidden (suspended workers, expired tokens) and 404s before handing to player.
  */
-async function verifyStreamReachable(url: string): Promise<boolean> {
+async function verifyStreamReachable(url: string, referer?: string): Promise<boolean> {
+  const headers: Record<string, string> = { 'User-Agent': BROWSER_UA };
+  if (referer) headers['Referer'] = referer;
+
   try {
     const res = await axios.head(url, {
-      headers: { 'User-Agent': BROWSER_UA },
-      timeout: 2500,
+      headers,
+      timeout: 3000,
       validateStatus: (s) => s >= 200 && s < 400,
     });
     return res.status >= 200 && res.status < 400;
@@ -78,8 +81,8 @@ async function verifyStreamReachable(url: string): Promise<boolean> {
     if (err.response?.status === 405 || !err.response) {
       try {
         const getRes = await axios.get(url, {
-          headers: { 'User-Agent': BROWSER_UA, Range: 'bytes=0-0' },
-          timeout: 2500,
+          headers: { ...headers, Range: 'bytes=0-0' },
+          timeout: 3000,
           validateStatus: (s) => s >= 200 && s < 400,
         });
         return getRes.status >= 200 && getRes.status < 400;
@@ -144,28 +147,37 @@ export async function resolveHubCloudStream(
   const allLinks = root2.querySelectorAll('a');
   console.log(`[HubCloud] 🔎 Step 2: Found ${allLinks.length} total anchor links to scan for stream candidates`);
 
-  // Priority 1: Direct media file (.mkv, .mp4, .webm) or Cloudflare Worker stream
+  // Priority 1: Direct media file (.mkv, .mp4, .webm) or Cloudflare Worker stream (excluding zip/rar/zipdisk)
   for (const a of allLinks) {
     const href = a.getAttribute('href') || '';
+    const textLower = a.text.toLowerCase();
     if (
       href.startsWith('http') &&
       (href.includes('workers.dev') || href.includes('.mkv') || href.includes('.mp4') || href.includes('.webm')) &&
-      !href.includes('google-index.workers.dev')
+      !href.includes('google-index.workers.dev') &&
+      !href.toLowerCase().includes('.zip') &&
+      !href.toLowerCase().includes('.rar') &&
+      !href.toLowerCase().includes('.7z') &&
+      !textLower.includes('zipdisk') &&
+      !textLower.includes('zip') &&
+      !textLower.includes('rar')
     ) {
       const cleanUrl = sanitizeStreamUrl(href);
-      // Fast check if Cloudflare R2 bucket is suspended or dead (e.g. 403 Forbidden / NotEntitled)
-      if (cleanUrl.includes('cloudflarestorage.com') || cleanUrl.includes('.r2.dev')) {
-        const isOk = await verifyStreamReachable(cleanUrl);
-        if (!isOk) {
-          console.warn(`[HubCloud] ⚠️ Priority 1: Cloudflare R2 bucket inaccessible (403/404), skipping...`);
-          continue;
-        }
+      // Fast probe to verify stream is not dead / 403 Forbidden / suspended
+      const isOk = await verifyStreamReachable(cleanUrl, redirectUrl);
+      if (!isOk) {
+        console.warn(`[HubCloud] ⚠️ Priority 1: Stream candidate inaccessible (403/404): ${cleanUrl.substring(0, 80)}, skipping...`);
+        continue;
       }
       const label = a.text.trim() || 'Direct Video Stream';
       console.log(`[HubCloud] 🎯 Priority 1 MATCH! Cloudflare Worker / Direct Media Stream: ${cleanUrl} [${label}]`);
       return {
         url: cleanUrl,
         label,
+        headers: {
+          'User-Agent': BROWSER_UA,
+          Referer: redirectUrl,
+        },
       };
     }
   }
@@ -186,6 +198,10 @@ export async function resolveHubCloudStream(
               return {
                 url: cleanUrl,
                 label: 'Cloudflare Fast Stream',
+                headers: {
+                  'User-Agent': BROWSER_UA,
+                  Referer: redirectUrl,
+                },
               };
             } else {
               console.warn(`[HubCloud] ⚠️ Priority 2: Unpacked R2 stream inaccessible (403/404), skipping...`);
@@ -207,6 +223,10 @@ export async function resolveHubCloudStream(
         return {
           url: cleanUrl,
           label: 'Cloudflare Fast Stream',
+          headers: {
+            'User-Agent': BROWSER_UA,
+            Referer: redirectUrl,
+          },
         };
       } else {
         console.warn(`[HubCloud] ⚠️ Priority 3: Direct R2 storage inaccessible (403/404), skipping...`);
@@ -214,7 +234,50 @@ export async function resolveHubCloudStream(
     }
   }
 
-  // Priority 4: 10Gbps Server / Pixel HubCloud / Google CDN Fast Streams
+  // Priority 4: PixelDrain API Direct Stream (High Speed & 100% Byte-Range Seekable in VLC)
+  // Evaluated BEFORE 10Gbps redirect links because PixelDrain supports HTTP 206 timeline seeking
+  const pixelIdMatches = new Set<string>();
+
+  for (const a of allLinks) {
+    const href = a.getAttribute('href') || '';
+    const m = href.match(/pixeldrain\.(?:com|dev)\/(?:u|api\/file)\/([a-zA-Z0-9_-]+)/);
+    if (m) pixelIdMatches.add(m[1]);
+  }
+
+  const scriptRegex = /https?:\/\/pixeldrain\.(?:com|dev)\/(?:u|api\/file)\/([a-zA-Z0-9_-]+)/g;
+  let scriptMatch;
+  while ((scriptMatch = scriptRegex.exec(step2Res.data)) !== null) {
+    pixelIdMatches.add(scriptMatch[1]);
+  }
+
+  console.log(`[HubCloud] 🔎 Priority 4: Found ${pixelIdMatches.size} PixelDrain candidate IDs:`, Array.from(pixelIdMatches));
+
+  for (const fileId of pixelIdMatches) {
+    console.log(`[HubCloud] 🔎 Priority 4: Testing PixelDrain file availability for ID: ${fileId}`);
+    const hosts = ['https://pixeldrain.dev', 'https://pixeldrain.com'];
+    for (const host of hosts) {
+      try {
+        const probe = await axios.get(`${host}/api/file/${fileId}/info`, {
+          timeout: 4000,
+          validateStatus: (s) => s === 200,
+        });
+        if (probe.status === 200 && probe.data?.success !== false) {
+          const directUrl = `${host}/api/file/${fileId}?download`;
+          console.log(`[HubCloud] 🎯 Priority 4 MATCH! PixelDrain file verified active & seekable: ${directUrl}`);
+          return {
+            url: directUrl,
+            label: 'PixelDrain Fast Stream',
+            headers: {
+              'User-Agent': BROWSER_UA,
+            },
+          };
+        }
+      } catch {}
+    }
+    console.warn(`[HubCloud] ⚠️ Priority 4: PixelDrain file ${fileId} expired (404), skipping...`);
+  }
+
+  // Priority 5: 10Gbps Server / Pixel HubCloud / Google CDN Streams
   const candidate10GbpsLinks: string[] = [];
   const otherRedirectLinks: string[] = [];
 
@@ -233,7 +296,7 @@ export async function resolveHubCloudStream(
   const prioritizedLinks = [...candidate10GbpsLinks, ...otherRedirectLinks];
 
   for (const href of prioritizedLinks) {
-    console.log(`[HubCloud] 🔄 Priority 4: Probing 10Gbps Server link: ${href}`);
+    console.log(`[HubCloud] 🔄 Priority 5: Probing 10Gbps Server link: ${href}`);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 8000);
     try {
@@ -242,7 +305,7 @@ export async function resolveHubCloudStream(
         headers: {
           'User-Agent': BROWSER_UA,
           Referer: redirectUrl,
-          Range: 'bytes=0-10', // CRUCIAL: Request only 10 bytes so the multi-gigabyte video stream is never buffered into JS memory
+          Range: 'bytes=0-10', // Request only 10 bytes for preflight
         },
         signal: controller.signal,
       });
@@ -252,22 +315,24 @@ export async function resolveHubCloudStream(
       controller.abort();
       clearTimeout(timer);
 
-      console.log(`[HubCloud] 📡 Priority 4 final redirect URL: ${finalUrl} (HTTP ${status})`);
+      console.log(`[HubCloud] 📡 Priority 5 final redirect URL: ${finalUrl} (HTTP ${status})`);
 
-      // Skip dead or blocked mirrors (e.g. 403 Forbidden Cloudflare R2 buckets)
       if (status >= 400) {
-        console.warn(`[HubCloud] ⚠️ Priority 4: Server returned HTTP ${status}, skipping...`);
+        console.warn(`[HubCloud] ⚠️ Priority 5: Server returned HTTP ${status}, skipping...`);
         continue;
       }
 
-      // Check if redirect URL contains ?link=https://... (e.g. cryptonewz.online/dl.php?link=https://video-downloads.googleusercontent.com/...)
       const linkMatch = finalUrl.match(/[?&]link=(https?:\/\/[^&]+)/);
       if (linkMatch) {
         const directUrl = sanitizeStreamUrl(decodeURIComponent(linkMatch[1]));
-        console.log(`[HubCloud] 🎯 Priority 4 MATCH! Unwrapped direct CDN link from redirect: ${directUrl}`);
+        console.log(`[HubCloud] 🎯 Priority 5 MATCH! Unwrapped direct CDN link: ${directUrl}`);
         return {
           url: directUrl,
           label: '10Gbps Fast Stream',
+          headers: {
+            'User-Agent': BROWSER_UA,
+            Referer: redirectUrl,
+          },
         };
       }
 
@@ -278,58 +343,20 @@ export async function resolveHubCloudStream(
         finalUrl.includes('.mp4')
       ) {
         const cleanFinal = sanitizeStreamUrl(finalUrl);
-        console.log(`[HubCloud] 🎯 Priority 4 MATCH! Final destination CDN URL: ${cleanFinal}`);
+        console.log(`[HubCloud] 🎯 Priority 5 MATCH! Destination CDN URL: ${cleanFinal}`);
         return {
           url: cleanFinal,
           label: '10Gbps Fast Stream',
+          headers: {
+            'User-Agent': BROWSER_UA,
+            Referer: redirectUrl,
+          },
         };
       }
     } catch (e: any) {
       clearTimeout(timer);
-      console.warn(`[HubCloud] ⚠️ Priority 4 probe failed on ${href}: ${e.message}`);
+      console.warn(`[HubCloud] ⚠️ Priority 5 probe failed on ${href}: ${e.message}`);
     }
-  }
-
-  // Priority 5: PixelDrain API Direct Stream (with expiration check & anti-scraper script extraction)
-  const pixelIdMatches = new Set<string>();
-
-  // 5a. Match from all a tags
-  for (const a of allLinks) {
-    const href = a.getAttribute('href') || '';
-    const m = href.match(/pixeldrain\.(?:com|dev)\/(?:u|api\/file)\/([a-zA-Z0-9_-]+)/);
-    if (m) pixelIdMatches.add(m[1]);
-  }
-
-  // 5b. Match from <script> tags or raw HTML (e.g. var pxl = "https://pixeldrain.dev/u/ENbe9c4d")
-  const scriptRegex = /https?:\/\/pixeldrain\.(?:com|dev)\/(?:u|api\/file)\/([a-zA-Z0-9_-]+)/g;
-  let scriptMatch;
-  while ((scriptMatch = scriptRegex.exec(step2Res.data)) !== null) {
-    pixelIdMatches.add(scriptMatch[1]);
-  }
-
-  console.log(`[HubCloud] 🔎 Priority 5: Found ${pixelIdMatches.size} PixelDrain candidate IDs:`, Array.from(pixelIdMatches));
-
-  for (const fileId of pixelIdMatches) {
-    console.log(`[HubCloud] 🔎 Priority 5: Testing PixelDrain file availability for ID: ${fileId}`);
-    // Try pixeldrain.dev first then pixeldrain.com
-    const hosts = ['https://pixeldrain.dev', 'https://pixeldrain.com'];
-    for (const host of hosts) {
-      try {
-        const probe = await axios.get(`${host}/api/file/${fileId}/info`, {
-          timeout: 4000,
-          validateStatus: (s) => s === 200,
-        });
-        if (probe.status === 200 && probe.data?.success !== false) {
-          const directUrl = `${host}/api/file/${fileId}?download`;
-          console.log(`[HubCloud] 🎯 Priority 5 MATCH! PixelDrain file verified active: ${directUrl}`);
-          return {
-            url: directUrl,
-            label: 'PixelDrain Fast Stream',
-          };
-        }
-      } catch {}
-    }
-    console.warn(`[HubCloud] ⚠️ Priority 5: PixelDrain file ${fileId} expired (404), skipping...`);
   }
 
   console.warn(`[HubCloud] ❌ All 5 priority stream matchers failed on ${redirectUrl}`);
@@ -338,7 +365,7 @@ export async function resolveHubCloudStream(
 
 export async function resolveShortenerUrl(
   shortenerUrl: string
-): Promise<{ url: string; label: string }> {
+): Promise<{ url: string; label: string; headers?: Record<string, string> }> {
   console.log(`[Resolver] 🔗 Resolving shortener / mirror URL: ${shortenerUrl}`);
   let targetUrl = shortenerUrl;
 
@@ -460,6 +487,9 @@ export async function resolveShortenerUrl(
       return {
         url: `https://pixeldrain.dev/api/file/${id}?download`,
         label: 'PixelDrain Direct',
+        headers: {
+          'User-Agent': BROWSER_UA,
+        },
       };
     }
   }
@@ -483,5 +513,8 @@ export async function resolveShortenerUrl(
   return {
     url: cleanUrl,
     label: 'Direct Link',
+    headers: {
+      'User-Agent': BROWSER_UA,
+    },
   };
 }

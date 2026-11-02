@@ -116,37 +116,56 @@ export default function SettingsScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionHeader}>VIDEO PLAYER ENGINE</Text>
           <View style={styles.card}>
+            <View style={styles.settingRow}>
+              <View style={[styles.iconBox, { backgroundColor: 'rgba(255, 140, 0, 0.15)' }]}>
+                <Ionicons name="film-outline" size={18} color="#ff8c00" />
+              </View>
+              <View style={styles.settingTextWrap}>
+                <Text style={styles.settingTitle}>Native External Player</Text>
+                <Text style={styles.settingSubtitle}>
+                  Direct system intent dispatch (VLC, MX Player, Just Player)
+                </Text>
+              </View>
+              <View style={[styles.pillBadge, { backgroundColor: 'rgba(16, 185, 129, 0.12)' }]}>
+                <Text style={[styles.pillBadgeText, { color: '#10b981' }]}>NATIVE</Text>
+              </View>
+            </View>
+
+            <View style={styles.divider} />
+
             <View style={styles.settingBlock}>
               <View style={styles.settingHeaderRow}>
-                <View style={[styles.iconBox, { backgroundColor: 'rgba(255, 140, 0, 0.15)' }]}>
-                  <Ionicons name="film-outline" size={18} color="#ff8c00" />
+                <View style={[styles.iconBox, { backgroundColor: 'rgba(59, 130, 246, 0.12)' }]}>
+                  <Ionicons name="play-circle-outline" size={18} color="#3b82f6" />
                 </View>
                 <View style={styles.settingTextWrap}>
-                  <Text style={styles.settingTitle}>Native Video Player</Text>
+                  <Text style={styles.settingTitle}>Default Video Player</Text>
                   <Text style={styles.settingSubtitle}>
-                    VLC enables hardware-accelerated 4K HDR, Dolby Atmos, and DTS-HD audio
+                    Pick your player or prompt the system chooser on each play
                   </Text>
                 </View>
               </View>
 
               <View style={styles.segmentedControl}>
-                <TouchableOpacity
-                  onPress={() => setPreferredPlayer('vlc')}
-                  activeOpacity={0.7}
-                  style={[styles.segmentBtn, preferredPlayer === 'vlc' && styles.segmentBtnActive]}>
-                  <Text style={[styles.segmentText, preferredPlayer === 'vlc' && styles.segmentTextActive]}>
-                    VLC for Android
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  onPress={() => setPreferredPlayer('chooser')}
-                  activeOpacity={0.7}
-                  style={[styles.segmentBtn, preferredPlayer === 'chooser' && styles.segmentBtnActive]}>
-                  <Text style={[styles.segmentText, preferredPlayer === 'chooser' && styles.segmentTextActive]}>
-                    System Chooser
-                  </Text>
-                </TouchableOpacity>
+                {[
+                  { id: 'ask' as const, label: 'Ask / Chooser' },
+                  { id: 'vlc' as const, label: 'VLC' },
+                  { id: 'mx' as const, label: 'MX Player' },
+                  { id: 'just' as const, label: 'Just Player' },
+                ].map((item) => {
+                  const isActive = (preferredPlayer || 'ask') === item.id;
+                  return (
+                    <TouchableOpacity
+                      key={item.id}
+                      onPress={() => setPreferredPlayer(item.id)}
+                      activeOpacity={0.7}
+                      style={[styles.segmentBtn, isActive && styles.segmentBtnActive]}>
+                      <Text style={[styles.segmentText, isActive && styles.segmentTextActive]}>
+                        {item.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
             </View>
           </View>

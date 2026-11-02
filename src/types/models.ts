@@ -1,6 +1,7 @@
 import { SvgProps } from 'react-native-svg';
 
 export type ProviderId = 'hdhub4u' | 'fourkhdhub' | 'addons' | 'bdix';
+export type PreferredPlayer = 'ask' | 'vlc' | 'mx' | 'just' | 'chooser';
 
 export interface ProviderMediaId {
   provider: ProviderId;
@@ -160,4 +161,5 @@ export interface DownloadItem {
   error?: string;
   completedAt?: number;
   createdAt: number;
+  release?: Release;
 }

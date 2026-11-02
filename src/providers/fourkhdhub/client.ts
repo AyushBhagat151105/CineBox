@@ -137,13 +137,19 @@ export class FourKHdHubProvider implements MediaProvider {
     const hasEpisodes = epElements.length > 0;
 
     // On TV series posts where individual episodes exist, NEVER query .download-item (which are full season zip/rar packs)
+    const downloadItems = root.querySelectorAll('.download-item');
     const elements = hasEpisodes
       ? epElements
-      : root.querySelectorAll('.download-item, a[href*="hubcloud"]');
+      : downloadItems.length > 0
+      ? downloadItems
+      : root.querySelectorAll('a[href*="hubcloud"]');
 
     for (const el of elements) {
+      const explicitTitle = el.querySelector('.file-title, .episode-file-title')?.text?.trim();
+      const headerTitle = el.querySelector('.download-header .flex-1')?.text?.trim();
       const fileTitle =
-        el.querySelector('.file-title, .episode-file-title')?.text?.trim() ||
+        explicitTitle ||
+        headerTitle ||
         (el.tagName === 'A' ? el.text.trim() : '') ||
         '4KHDHub Release';
 
@@ -239,7 +245,7 @@ export class FourKHdHubProvider implements MediaProvider {
       const mirror = release.mirrors[i];
       console.log(`[4KHDHub] 🔄 Mirror [${i + 1}/${release.mirrors.length}]: Resolving ${mirror.resolverUrl}`);
       try {
-        const { url, label } = await resolveShortenerUrl(mirror.resolverUrl);
+        const { url, label, headers } = await resolveShortenerUrl(mirror.resolverUrl);
         if (url) {
           if (/\.(?:zip|rar|7z|tar)(?:\?|$)/i.test(url)) {
             console.warn(`[4KHDHub] ⚠️ Mirror resolved to a zip/rar file: ${url}, rejecting...`);
@@ -252,7 +258,7 @@ export class FourKHdHubProvider implements MediaProvider {
             url,
             sourceLabel: `4KHDHub · ${label}`,
             title: release.filename,
-            headers: {
+            headers: headers || {
               'User-Agent': BROWSER_UA,
             },
           };

@@ -407,7 +407,7 @@ export class HDHub4uProvider implements MediaProvider {
       const mirror = release.mirrors[i];
       console.log(`[HDHub4u] 🔄 Mirror [${i + 1}/${release.mirrors.length}]: Resolving ${mirror.resolverUrl}`);
       try {
-        const { url, label } = await resolveShortenerUrl(mirror.resolverUrl);
+        const { url, label, headers } = await resolveShortenerUrl(mirror.resolverUrl);
         if (url) {
           console.log(`[HDHub4u] ✅ Mirror [${i + 1}/${release.mirrors.length}] resolved successfully: ${url} (${label})`);
           return {
@@ -415,7 +415,7 @@ export class HDHub4uProvider implements MediaProvider {
             url,
             sourceLabel: `HDHub4u · ${label}`,
             title: release.filename,
-            headers: {
+            headers: headers || {
               'User-Agent': BROWSER_UA,
             },
           };

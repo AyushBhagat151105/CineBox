@@ -2,7 +2,7 @@
   "expo": {
     "name": "CineBox",
     "slug": "CineBox",
-    "version": "2.0.1",
+    "version": "2.0.5",
     "orientation": "default",
     "icon": "./assets/images/icon.png",
     "scheme": "cinebox",
@@ -21,7 +21,7 @@
     },
     "android": {
       "package": "com.ayushbhagat.cinebox",
-      "versionCode": 6,
+      "versionCode": 10,
       "permissions": [
         "INTERNET",
         "ACCESS_NETWORK_STATE",
@@ -31,7 +31,11 @@
         "WRITE_EXTERNAL_STORAGE",
         "READ_MEDIA_VIDEO",
         "READ_MEDIA_AUDIO",
-        "READ_MEDIA_IMAGES"
+        "READ_MEDIA_IMAGES",
+        "MANAGE_EXTERNAL_STORAGE",
+        "POST_NOTIFICATIONS",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_DATA_SYNC"
       ],
       "usesCleartextTraffic": true,
       "adaptiveIcon": {

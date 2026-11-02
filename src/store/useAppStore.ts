@@ -3,7 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { DownloadItem, DownloadStatus, FavoriteItem, SearchHistoryItem, WatchHistoryItem } from '@/types';
 import { cleanMovieTitle } from '@/utils';
 
-export type PreferredPlayer = 'vlc' | 'chooser';
+export type PreferredPlayer = 'ask' | 'vlc' | 'mx' | 'just' | 'chooser';
 
 interface AppState {
   watchHistory: WatchHistoryItem[];
@@ -43,7 +43,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   downloads: [],
   preferredQuality: 'Auto',
   preferredLanguage: 'Hindi',
-  preferredPlayer: 'vlc',
+  preferredPlayer: 'ask',
   skipSeconds: 10,
   isLoaded: false,
 
@@ -89,7 +89,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         searchHistory: searchJson ? JSON.parse(searchJson) : [],
         downloads: sanitizedDownloads,
         skipSeconds: skipStr ? parseInt(skipStr, 10) : 10,
-        preferredPlayer: (playerStr as PreferredPlayer) || 'vlc',
+        preferredPlayer: (playerStr as PreferredPlayer) || 'ask',
         isLoaded: true,
       });
     } catch (err: any) {
