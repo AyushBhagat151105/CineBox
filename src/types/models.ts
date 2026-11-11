@@ -158,6 +158,7 @@ export interface DownloadItem {
   estimatedTimeLeft?: string;
   downloadUrl: string;
   headers?: Record<string, string>;
+  resumeData?: string;
   error?: string;
   completedAt?: number;
   createdAt: number;

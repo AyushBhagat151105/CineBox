@@ -1,6 +1,6 @@
 import { aggregator } from '@/providers';
 import { vlcService, downloaderService } from '@/services';
-import { useAppStore, usePlayerStore } from '@/store';
+import { useAppStore } from '@/store';
 import { WatchHistoryItem } from '@/types';
 import { cleanDisplayTitle, normalizeShowTitle } from '@/utils';
 import { Ionicons } from '@expo/vector-icons';
@@ -25,8 +25,6 @@ interface ContinueWatchingCardProps {
 
 export const ContinueWatchingCard: React.FC<ContinueWatchingCardProps> = React.memo(({ item }) => {
   const router = useRouter();
-  const setPlayback = usePlayerStore((s) => s.setPlayback);
-  const setAvailableReleases = usePlayerStore((s) => s.setAvailableReleases);
   const [isResuming, setIsResuming] = useState(false);
 
   const removeFromHistory = useAppStore((s) => s.removeFromHistory);
@@ -88,8 +86,6 @@ export const ContinueWatchingCard: React.FC<ContinueWatchingCardProps> = React.m
         }
 
         const source = await aggregator.resolveWithFallback(candidates);
-        setPlayback(source, candidates[0], item.positionSeconds);
-        setAvailableReleases(candidates);
 
         await vlcService.launch({
           streamUrl: source.url,

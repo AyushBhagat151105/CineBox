@@ -123,12 +123,34 @@ class UpdaterService {
   }
 
   /**
+   * Cleans up older downloaded APKs from the cache directory to prevent storage leaks
+   */
+  async cleanOldApks(keepVersion?: string): Promise<void> {
+    try {
+      if (!FileSystem.cacheDirectory) return;
+      const files = await FileSystem.readDirectoryAsync(FileSystem.cacheDirectory);
+      const keepFileName = keepVersion ? `CineBox-${keepVersion}.apk` : '';
+      for (const file of files) {
+        if (file.startsWith('CineBox-') && file.endsWith('.apk') && file !== keepFileName) {
+          await FileSystem.deleteAsync(`${FileSystem.cacheDirectory}${file}`, { idempotent: true });
+          console.log(`[Updater] 🧹 Removed obsolete APK from cache: ${file}`);
+        }
+      }
+    } catch (e: any) {
+      console.warn('[Updater] Failed to clean old APKs:', e?.message);
+    }
+  }
+
+  /**
    * Downloads APK with progress reporting (skips if already downloaded)
    */
   async downloadApk(
     updateInfo: UpdateInfo,
     onProgress?: UpdateProgressListener
   ): Promise<string> {
+    // Purge old APKs from previous updates
+    await this.cleanOldApks(updateInfo.version);
+
     const destinationUri = this.getApkPath(updateInfo.version);
 
     const alreadyDownloaded = await this.isApkAlreadyDownloaded(

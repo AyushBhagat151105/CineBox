@@ -2,7 +2,7 @@
   "expo": {
     "name": "CineBox",
     "slug": "CineBox",
-    "version": "2.0.5",
+    "version": "2.0.6",
     "orientation": "default",
     "icon": "./assets/images/icon.png",
     "scheme": "cinebox",
@@ -21,7 +21,7 @@
     },
     "android": {
       "package": "com.ayushbhagat.cinebox",
-      "versionCode": 10,
+      "versionCode": 11,
       "permissions": [
         "INTERNET",
         "ACCESS_NETWORK_STATE",

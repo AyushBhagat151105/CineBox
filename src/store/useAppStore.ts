@@ -60,14 +60,10 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       let parsedHistory: WatchHistoryItem[] = historyJson ? JSON.parse(historyJson) : [];
 
-      // Clean up any phantom non-existent episodes (such as Reacher S1:E9)
-      const sanitizedHistory = parsedHistory.filter((item) => {
-        const cleanTitle = cleanMovieTitle(item.title).toLowerCase();
-        if (cleanTitle.includes('reacher') && item.season === 1 && item.episode === 9) {
-          return false;
-        }
-        return true;
-      });
+      // Validate watch history records, discarding null or malformed entries
+      const sanitizedHistory = parsedHistory.filter(
+        (item) => item && typeof item.mediaId === 'string' && typeof item.title === 'string' && item.title.trim().length > 0
+      );
 
       if (sanitizedHistory.length !== parsedHistory.length) {
         AsyncStorage.setItem('@cinebox_history', JSON.stringify(sanitizedHistory)).catch(() => {});

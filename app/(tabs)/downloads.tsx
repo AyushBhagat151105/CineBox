@@ -42,12 +42,17 @@ export default function DownloadsScreen() {
     setFreeSpaceBytes(space);
   };
 
+  const hasActiveDownloads = useMemo(() => {
+    return downloads.some((d) => d.status === 'downloading');
+  }, [downloads]);
+
   useEffect(() => {
     refreshStorage();
     downloaderService.migrateLegacyDownloads().then(refreshStorage).catch(() => {});
+    if (!hasActiveDownloads) return;
     const interval = setInterval(refreshStorage, 10000);
     return () => clearInterval(interval);
-  }, []);
+  }, [hasActiveDownloads]);
 
   // Compute storage used by CineBox downloads
   const totalDownloadedBytes = useMemo(() => {

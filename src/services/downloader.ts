@@ -110,9 +110,13 @@ class DownloaderService {
    */
   async ensureDirectories() {
     try {
-      const baseInfo = await FileSystem.getInfoAsync(this.baseDir);
-      if (!baseInfo.exists) {
-        await FileSystem.makeDirectoryAsync(this.baseDir, { intermediates: true });
+      if (Platform.OS === 'android' && NativePlayerLauncher?.ensureDirectory) {
+        await NativePlayerLauncher.ensureDirectory(this.baseDir);
+      } else {
+        const baseInfo = await FileSystem.getInfoAsync(this.baseDir);
+        if (!baseInfo.exists) {
+          await FileSystem.makeDirectoryAsync(this.baseDir, { intermediates: true });
+        }
       }
       const postersInfo = await FileSystem.getInfoAsync(this.postersDir);
       if (!postersInfo.exists) {
@@ -507,7 +511,8 @@ class DownloaderService {
       { headers },
       (progressData) => {
         this.handleProgress(id, progressData.totalBytesWritten, progressData.totalBytesExpectedToWrite);
-      }
+      },
+      item.resumeData
     );
 
     this.activeDownloads.set(id, downloadResumable);
@@ -538,6 +543,7 @@ class DownloaderService {
             downloadSpeed: undefined,
             estimatedTimeLeft: undefined,
             completedAt: Date.now(),
+            resumeData: undefined,
           });
           await useAppStore.getState().persistDownloads();
 
@@ -548,7 +554,12 @@ class DownloaderService {
             : '';
           const notifTitle = 'Download Complete';
           const notifContent = `${cleanDisplayTitle(item.title)}${epLabel} is ready offline.`;
-          const completeNotifId = 2000 + (item.episode || Math.floor(Math.random() * 500));
+          // Deterministic notification ID based on item ID hash to prevent episode notification collisions
+          let idHash = 0;
+          for (let i = 0; i < id.length; i++) {
+            idHash = ((idHash << 5) - idHash + id.charCodeAt(i)) | 0;
+          }
+          const completeNotifId = 2000 + (Math.abs(idHash) % 10000);
           NativePlayerLauncher?.showDownloadCompleteNotification?.(completeNotifId, notifTitle, notifContent);
         } else {
           console.warn(`[Downloader] ⚠️ Download finished with empty result`);
@@ -639,9 +650,13 @@ class DownloaderService {
    */
   async pauseDownload(id: string) {
     const resumable = this.activeDownloads.get(id);
+    let capturedResumeData: string | undefined;
     if (resumable) {
       try {
-        await resumable.pauseAsync();
+        const pauseState = await resumable.pauseAsync();
+        if (pauseState && pauseState.resumeData) {
+          capturedResumeData = pauseState.resumeData;
+        }
         this.activeDownloads.delete(id);
         this.progressThrottles.delete(id);
       } catch (err: any) {
@@ -649,8 +664,10 @@ class DownloaderService {
       }
     }
     NativePlayerLauncher?.cancelNotification?.(1001);
+    const prevItem = useAppStore.getState().downloads.find((d) => d.id === id);
     useAppStore.getState().updateDownload(id, {
       status: 'paused',
+      resumeData: capturedResumeData || prevItem?.resumeData,
       downloadSpeed: undefined,
       estimatedTimeLeft: undefined,
     });

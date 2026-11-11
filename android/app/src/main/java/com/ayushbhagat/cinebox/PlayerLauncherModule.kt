@@ -290,6 +290,27 @@ class PlayerLauncherModule(private val reactContext: ReactApplicationContext) :
     }
 
     /**
+     * Ensure a directory exists on disk, bypassing Expo FileSystem permission checks.
+     */
+    @ReactMethod
+    fun ensureDirectory(dirPath: String, promise: Promise) {
+        try {
+            val cleanPath = if (dirPath.startsWith("file://")) {
+                Uri.parse(dirPath).path ?: dirPath.removePrefix("file://")
+            } else {
+                dirPath
+            }
+            val dir = File(cleanPath)
+            if (!dir.exists()) {
+                dir.mkdirs()
+            }
+            promise.resolve(dir.exists())
+        } catch (e: Exception) {
+            promise.resolve(false)
+        }
+    }
+
+    /**
      * Acquire a CPU Partial WakeLock to prevent the system from throttling or suspending
      * network connections during background downloads.
      */

@@ -4,20 +4,13 @@ import {
   View,
   Text,
   StyleSheet,
-  TouchableOpacity,
+  Pressable,
   Dimensions,
   ScrollView,
   Alert,
   ActivityIndicator,
 } from 'react-native';
-import {
-  ArrowDownCircle,
-  Sparkles,
-  X,
-  CheckCircle2,
-  Settings,
-  ShieldCheck,
-} from 'lucide-react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { updaterService, UpdateInfo } from '@/services/updater';
 
 const { width } = Dimensions.get('window');
@@ -36,6 +29,7 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
   const [status, setStatus] = useState<'idle' | 'downloading' | 'ready'>('idle');
   const [progress, setProgress] = useState(0);
   const [isLaunching, setIsLaunching] = useState(false);
+  const [focusedBtn, setFocusedBtn] = useState<string | null>(null);
 
   useEffect(() => {
     if (!updateInfo || !visible) return;
@@ -138,16 +132,21 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
               status === 'ready' && styles.iconCircleSuccess,
             ]}>
             {status === 'ready' ? (
-              <CheckCircle2 size={32} color="#46d369" />
+              <Ionicons name="checkmark-circle" size={32} color="#46d369" />
             ) : (
-              <ArrowDownCircle size={32} color="#e50914" />
+              <Ionicons name="arrow-down-circle" size={32} color="#e50914" />
             )}
           </View>
 
           {status !== 'downloading' && (
-            <TouchableOpacity style={styles.closeBtn} onPress={onClose} activeOpacity={0.7}>
-              <X size={20} color="#8a8a9a" />
-            </TouchableOpacity>
+            <Pressable
+              focusable={true}
+              onFocus={() => setFocusedBtn('close')}
+              onBlur={() => setFocusedBtn(null)}
+              style={[styles.closeBtn, focusedBtn === 'close' && styles.closeBtnFocused]}
+              onPress={onClose}>
+              <Ionicons name="close" size={20} color={focusedBtn === 'close' ? '#ffffff' : '#8a8a9a'} />
+            </Pressable>
           )}
 
           <Text style={styles.title}>
@@ -155,7 +154,7 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
           </Text>
 
           <View style={styles.versionBadge}>
-            <Sparkles size={12} color="#f5c518" />
+            <Ionicons name="sparkles" size={12} color="#f5c518" />
             <Text style={styles.versionText}>v{updateInfo.version}</Text>
             {updateInfo.apkSizeMb && (
               <Text style={styles.sizeText}>• {updateInfo.apkSizeMb} MB</Text>
@@ -180,46 +179,68 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
             </View>
           ) : status === 'ready' ? (
             <View style={styles.actionContainer}>
-              <TouchableOpacity
-                style={styles.installBtn}
+              <Pressable
+                focusable={true}
+                hasTVPreferredFocus={true}
+                onFocus={() => setFocusedBtn('install')}
+                onBlur={() => setFocusedBtn(null)}
+                style={[styles.installBtn, focusedBtn === 'install' && styles.btnFocused]}
                 onPress={handleLaunchInstaller}
-                disabled={isLaunching}
-                activeOpacity={0.85}>
+                disabled={isLaunching}>
                 {isLaunching ? (
                   <ActivityIndicator color="#ffffff" size="small" />
                 ) : (
                   <>
-                    <ShieldCheck size={18} color="#ffffff" />
+                    <Ionicons name="shield-checkmark" size={18} color="#ffffff" />
                     <Text style={styles.updateBtnText}>Install Now</Text>
                   </>
                 )}
-              </TouchableOpacity>
+              </Pressable>
 
-              <TouchableOpacity
-                style={styles.permissionBtn}
-                onPress={handleOpenSettings}
-                activeOpacity={0.75}>
-                <Settings size={14} color="#8a8a9a" />
+              <Pressable
+                focusable={true}
+                onFocus={() => setFocusedBtn('permission')}
+                onBlur={() => setFocusedBtn(null)}
+                style={[styles.permissionBtn, focusedBtn === 'permission' && styles.btnFocused]}
+                onPress={handleOpenSettings}>
+                <Ionicons name="settings-outline" size={14} color="#8a8a9a" />
                 <Text style={styles.permissionBtnText}>Allow Unknown Apps (Settings)</Text>
-              </TouchableOpacity>
+              </Pressable>
 
-              <TouchableOpacity style={styles.laterBtn} onPress={onClose} activeOpacity={0.7}>
-                <Text style={styles.laterBtnText}>Done / Close</Text>
-              </TouchableOpacity>
+              <Pressable
+                focusable={true}
+                onFocus={() => setFocusedBtn('close_bottom')}
+                onBlur={() => setFocusedBtn(null)}
+                style={[styles.laterBtn, focusedBtn === 'close_bottom' && styles.laterBtnFocused]}
+                onPress={onClose}>
+                <Text style={[styles.laterBtnText, focusedBtn === 'close_bottom' && { color: '#ffffff' }]}>
+                  Done / Close
+                </Text>
+              </Pressable>
             </View>
           ) : (
             <View style={styles.actionContainer}>
-              <TouchableOpacity
-                style={styles.updateBtn}
-                onPress={handleStartDownload}
-                activeOpacity={0.85}>
-                <ArrowDownCircle size={18} color="#ffffff" />
+              <Pressable
+                focusable={true}
+                hasTVPreferredFocus={true}
+                onFocus={() => setFocusedBtn('update')}
+                onBlur={() => setFocusedBtn(null)}
+                style={[styles.updateBtn, focusedBtn === 'update' && styles.btnFocused]}
+                onPress={handleStartDownload}>
+                <Ionicons name="arrow-down-circle" size={18} color="#ffffff" />
                 <Text style={styles.updateBtnText}>Update Now</Text>
-              </TouchableOpacity>
+              </Pressable>
 
-              <TouchableOpacity style={styles.laterBtn} onPress={onClose} activeOpacity={0.7}>
-                <Text style={styles.laterBtnText}>Remind Me Later</Text>
-              </TouchableOpacity>
+              <Pressable
+                focusable={true}
+                onFocus={() => setFocusedBtn('later')}
+                onBlur={() => setFocusedBtn(null)}
+                style={[styles.laterBtn, focusedBtn === 'later' && styles.laterBtnFocused]}
+                onPress={onClose}>
+                <Text style={[styles.laterBtnText, focusedBtn === 'later' && { color: '#ffffff' }]}>
+                  Remind Me Later
+                </Text>
+              </Pressable>
             </View>
           )}
         </View>
@@ -272,6 +293,13 @@ const styles = StyleSheet.create({
     padding: 6,
     borderRadius: 20,
     backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderWidth: 1.5,
+    borderColor: 'transparent',
+  },
+  closeBtnFocused: {
+    borderColor: '#ffffff',
+    backgroundColor: '#e50914',
+    transform: [{ scale: 1.15 }],
   },
   title: {
     fontSize: 20,
@@ -403,10 +431,27 @@ const styles = StyleSheet.create({
   },
   laterBtn: {
     paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: 'transparent',
   },
   laterBtnText: {
     color: '#707080',
     fontSize: 12,
     fontWeight: '500',
+  },
+  laterBtnFocused: {
+    borderColor: '#e50914',
+    backgroundColor: 'rgba(229, 9, 20, 0.15)',
+  },
+  btnFocused: {
+    borderColor: '#ffffff',
+    borderWidth: 2.5,
+    transform: [{ scale: 1.04 }],
+    shadowColor: '#ffffff',
+    shadowOpacity: 0.9,
+    shadowRadius: 10,
+    elevation: 10,
   },
 });

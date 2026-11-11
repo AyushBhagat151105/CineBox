@@ -5,6 +5,7 @@ import {
   ScrollView,
   StyleSheet,
   TouchableOpacity,
+  Pressable,
   Alert,
   ActivityIndicator,
 } from 'react-native';
@@ -36,6 +37,7 @@ export default function SettingsScreen() {
   const [remainingAdMinutes, setRemainingAdMinutes] = useState<number>(0);
   const [checkingUpdate, setCheckingUpdate] = useState<boolean>(false);
   const [manualUpdateInfo, setManualUpdateInfo] = useState<UpdateInfo | null>(null);
+  const [focusedControl, setFocusedControl] = useState<string | null>(null);
 
   useEffect(() => {
     checkDomains();
@@ -154,16 +156,27 @@ export default function SettingsScreen() {
                   { id: 'just' as const, label: 'Just Player' },
                 ].map((item) => {
                   const isActive = (preferredPlayer || 'ask') === item.id;
+                  const isFocused = focusedControl === `player_${item.id}`;
                   return (
-                    <TouchableOpacity
+                    <Pressable
                       key={item.id}
+                      focusable={true}
+                      onFocus={() => setFocusedControl(`player_${item.id}`)}
+                      onBlur={() => setFocusedControl(null)}
                       onPress={() => setPreferredPlayer(item.id)}
-                      activeOpacity={0.7}
-                      style={[styles.segmentBtn, isActive && styles.segmentBtnActive]}>
-                      <Text style={[styles.segmentText, isActive && styles.segmentTextActive]}>
+                      style={[
+                        styles.segmentBtn,
+                        isActive && styles.segmentBtnActive,
+                        isFocused && styles.segmentBtnFocused,
+                      ]}>
+                      <Text
+                        style={[
+                          styles.segmentText,
+                          (isActive || isFocused) && styles.segmentTextActive,
+                        ]}>
                         {item.label}
                       </Text>
-                    </TouchableOpacity>
+                    </Pressable>
                   );
                 })}
               </View>
@@ -193,16 +206,27 @@ export default function SettingsScreen() {
               <View style={styles.segmentedControl}>
                 {[5, 10, 15, 30].map((sec) => {
                   const isActive = (skipSeconds || 10) === sec;
+                  const isFocused = focusedControl === `skip_${sec}`;
                   return (
-                    <TouchableOpacity
+                    <Pressable
                       key={sec}
+                      focusable={true}
+                      onFocus={() => setFocusedControl(`skip_${sec}`)}
+                      onBlur={() => setFocusedControl(null)}
                       onPress={() => setSkipSeconds(sec)}
-                      activeOpacity={0.7}
-                      style={[styles.segmentBtn, isActive && styles.segmentBtnActive]}>
-                      <Text style={[styles.segmentText, isActive && styles.segmentTextActive]}>
+                      style={[
+                        styles.segmentBtn,
+                        isActive && styles.segmentBtnActive,
+                        isFocused && styles.segmentBtnFocused,
+                      ]}>
+                      <Text
+                        style={[
+                          styles.segmentText,
+                          (isActive || isFocused) && styles.segmentTextActive,
+                        ]}>
                         {sec}s
                       </Text>
-                    </TouchableOpacity>
+                    </Pressable>
                   );
                 })}
               </View>
@@ -250,10 +274,15 @@ export default function SettingsScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionHeader}>UPDATES & DISTRIBUTION</Text>
           <View style={styles.card}>
-            <TouchableOpacity
+            <Pressable
+              focusable={true}
+              onFocus={() => setFocusedControl('check_update')}
+              onBlur={() => setFocusedControl(null)}
               onPress={handleCheckUpdateManual}
-              style={styles.clickableRow}
-              activeOpacity={0.7}
+              style={[
+                styles.clickableRow,
+                focusedControl === 'check_update' && styles.clickableRowFocused,
+              ]}
               disabled={checkingUpdate}>
               <View style={[styles.iconBox, { backgroundColor: 'rgba(229, 9, 20, 0.12)' }]}>
                 {checkingUpdate ? (
@@ -271,7 +300,7 @@ export default function SettingsScreen() {
                 </Text>
               </View>
               <Ionicons name="chevron-forward" size={18} color="#6b7280" />
-            </TouchableOpacity>
+            </Pressable>
           </View>
         </View>
 
@@ -279,10 +308,15 @@ export default function SettingsScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionHeader}>PRIVACY & TRANSPARENCY</Text>
           <View style={styles.card}>
-            <TouchableOpacity
+            <Pressable
+              focusable={true}
+              onFocus={() => setFocusedControl('privacy')}
+              onBlur={() => setFocusedControl(null)}
               onPress={() => router.push('/privacy')}
-              style={styles.clickableRow}
-              activeOpacity={0.7}>
+              style={[
+                styles.clickableRow,
+                focusedControl === 'privacy' && styles.clickableRowFocused,
+              ]}>
               <View style={[styles.iconBox, { backgroundColor: 'rgba(16, 185, 129, 0.12)' }]}>
                 <Ionicons name="shield-checkmark" size={18} color="#10b981" />
               </View>
@@ -293,7 +327,7 @@ export default function SettingsScreen() {
                 </Text>
               </View>
               <Ionicons name="chevron-forward" size={18} color="#6b7280" />
-            </TouchableOpacity>
+            </Pressable>
           </View>
         </View>
 
@@ -412,10 +446,15 @@ export default function SettingsScreen() {
 
             <View style={styles.divider} />
 
-            <TouchableOpacity
+            <Pressable
+              focusable={true}
+              onFocus={() => setFocusedControl('clear_history')}
+              onBlur={() => setFocusedControl(null)}
               onPress={handleClearHistory}
-              style={styles.clickableRow}
-              activeOpacity={0.7}>
+              style={[
+                styles.clickableRow,
+                focusedControl === 'clear_history' && styles.clickableRowFocused,
+              ]}>
               <View style={[styles.iconBox, { backgroundColor: 'rgba(239, 68, 68, 0.12)' }]}>
                 <Ionicons name="trash-outline" size={18} color="#ef4444" />
               </View>
@@ -424,7 +463,7 @@ export default function SettingsScreen() {
                 <Text style={styles.settingSubtitle}>Reset local playback positions</Text>
               </View>
               <Ionicons name="chevron-forward" size={16} color="#ef4444" />
-            </TouchableOpacity>
+            </Pressable>
           </View>
         </View>
 
@@ -530,6 +569,12 @@ const styles = StyleSheet.create({
   segmentBtnActive: {
     backgroundColor: '#e50914',
   },
+  segmentBtnFocused: {
+    borderColor: '#ffffff',
+    borderWidth: 2,
+    backgroundColor: '#e50914',
+    transform: [{ scale: 1.05 }],
+  },
   segmentText: {
     color: '#9ca3af',
     fontSize: 12,
@@ -550,6 +595,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 14,
     gap: 12,
+    borderWidth: 1.5,
+    borderColor: 'transparent',
+  },
+  clickableRowFocused: {
+    borderColor: '#ffffff',
+    backgroundColor: 'rgba(229, 9, 20, 0.15)',
+    borderRadius: 12,
+    transform: [{ scale: 1.01 }],
   },
   providerRow: {
     flexDirection: 'row',

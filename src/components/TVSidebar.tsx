@@ -41,10 +41,9 @@ export function TVSidebar() {
       <Pressable
         key={item.id}
         focusable={true}
-        hasTVPreferredFocus={item.id === 'home'}
         onFocus={() => setFocusedId(item.id)}
         onBlur={() => setFocusedId((prev) => (prev === item.id ? null : prev))}
-        onPress={() => router.push(item.path)}
+        onPress={() => router.replace(item.path)}
         style={[
           styles.navButton,
           active && styles.navButtonActive,

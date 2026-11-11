@@ -12,7 +12,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge)](LICENSE)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue?style=for-the-badge)](LICENSE-APACHE)
 
-[![Download APK](https://img.shields.io/badge/Download-CineBox_v1.1.1.apk-e50914?style=for-the-badge&logo=android&logoColor=white)](https://github.com/AyushBhagat151105/CineBox/releases/latest)
+[![Download APK](https://img.shields.io/badge/Download-CineBox_v2.0.6.apk-e50914?style=for-the-badge&logo=android&logoColor=white)](https://github.com/AyushBhagat151105/CineBox/releases/latest)
 [![Official Website](https://img.shields.io/badge/Website-cine--box--aggregator.vercel.app-e50914?style=for-the-badge&logo=vercel&logoColor=white)](https://cine-box-aggregator.vercel.app)
 [![Documentation](https://img.shields.io/badge/Explore-Documentation-222230?style=for-the-badge&logo=bookstack&logoColor=white)](#-documentation-index)
 
@@ -37,7 +37,7 @@
 
 ## 🌟 Overview
 
-> 🌐 **Official Website**: [https://cine-box-aggregator.vercel.app](https://cine-box-aggregator.vercel.app) · **Latest Release**: [v1.1.1](https://github.com/AyushBhagat151105/CineBox/releases/latest)
+> 🌐 **Official Website**: [https://cine-box-aggregator.vercel.app](https://cine-box-aggregator.vercel.app) · **Latest Release**: [v2.0.6](https://github.com/AyushBhagat151105/CineBox/releases/latest)
 
 **CineBox** is a high-performance Android media streaming and catalog aggregation application engineered for cinema enthusiasts who demand uncompromised playback quality.
 

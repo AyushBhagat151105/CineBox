@@ -18,7 +18,7 @@ export function parseSeasonEpisode(filename: string, contextTitle?: string): Par
   }
 
   // 2. Match Season 1 Episode 2
-  const fullMatch = combined.match(/\bSeason\s*(\d{1,2})\s*[-_.]?\s*(?:Episode|Ep)\s*(\d{1,3})\b/i);
+  const fullMatch = combined.match(/\bSeason[\s._-]*(\d{1,2})[\s._-]*(?:Episode|Ep)[\s._-]*(\d{1,3})\b/i);
   if (fullMatch) {
     return {
       season: parseInt(fullMatch[1], 10),
@@ -28,9 +28,9 @@ export function parseSeasonEpisode(filename: string, contextTitle?: string): Par
   }
 
   // 3. Match standalone Episode in filename (e.g. "E01 - Drive", "EP 03", "Episode 4")
-  const epMatch = filename.match(/\b(?:E|EP|Episode)\s*(\d{1,3})\b/i);
-  // Detect season from context (e.g. "Season 1", "S01")
-  const seasonFromContext = combined.match(/\b(?:Season|S)\s*(\d{1,2})\b/i);
+  const epMatch = filename.match(/\b(?:E|EP|Episode)[\s._-]*(\d{1,3})\b/i);
+  // Detect season from context (e.g. "Season 1", "S01", "Season.4")
+  const seasonFromContext = combined.match(/\b(?:Season|S)[\s._-]*(\d{1,2})\b/i);
   const contextSeason = seasonFromContext ? parseInt(seasonFromContext[1], 10) : undefined;
 
   if (epMatch) {

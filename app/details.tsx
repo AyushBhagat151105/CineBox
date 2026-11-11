@@ -22,7 +22,7 @@ import {
   Release,
 } from '@/types';
 import { ProviderBadge, QualityBadge, ReleaseBadgeRow, TrailerPlayer, TrailerPlayerRef, DownloadConfirmModal, SeasonDownloadModal } from '@/components';
-import { useAppStore, usePlayerStore } from '@/store';
+import { useAppStore } from '@/store';
 import { cleanDisplayTitle, normalizeShowTitle } from '@/utils';
 import { vlcService, downloaderService } from '@/services';
 
@@ -56,8 +56,6 @@ export default function DetailsScreen() {
   const toggleFavorite = useAppStore((s) => s.toggleFavorite);
   const getProgress = useAppStore((s) => s.getProgress);
   const downloads = useAppStore((s) => s.downloads);
-  const setPlayback = usePlayerStore((s) => s.setPlayback);
-  const setAvailableReleases = usePlayerStore((s) => s.setAvailableReleases);
 
   const [details, setDetails] = useState<MediaDetails | null>(null);
   const [releases, setReleases] = useState<Release[]>([]);
@@ -81,6 +79,7 @@ export default function DetailsScreen() {
   const [focusedHeaderFav, setFocusedHeaderFav] = useState(false);
   const [focusedQuickPlay, setFocusedQuickPlay] = useState(false);
   const [focusedFav, setFocusedFav] = useState(false);
+  const [focusedBulkDownload, setFocusedBulkDownload] = useState(false);
   const [focusedQuality, setFocusedQuality] = useState<string | null>(null);
   const [focusedSeason, setFocusedSeason] = useState<number | 'packs' | 'all' | null>(null);
   const [focusedEpisode, setFocusedEpisode] = useState<number | 'all' | null>(null);
@@ -120,7 +119,6 @@ export default function DetailsScreen() {
         const rels = await aggregator.getAllReleases([{ provider, id: mediaId }]);
         if (active) {
           setReleases(rels);
-          setAvailableReleases(rels);
 
           const seasonsFound = Array.from(
             new Set(rels.filter((r) => r.season !== undefined).map((r) => r.season!))
@@ -366,9 +364,6 @@ export default function DetailsScreen() {
 
       console.log(`[Details] 🎯 Stream resolved successfully: ${source.url.slice(0, 80)}... (resume: ${resumeSec}s)`);
 
-      setPlayback(source, release, resumeSec);
-      setAvailableReleases(candidates.length > 0 ? candidates : releases);
-
       const preferredPlayer = useAppStore.getState().preferredPlayer;
       console.log(`[Details] 🚀 Handing off to VLC Service (preferredPlayer: ${preferredPlayer})`);
       await vlcService.launch({
@@ -429,9 +424,6 @@ export default function DetailsScreen() {
       const chosenRelease = pool[0];
 
       console.log(`[Details] 🎯 Quick Play stream resolved: ${source.url.slice(0, 80)}... (resume: ${resumeSec}s)`);
-
-      setPlayback(source, chosenRelease, resumeSec);
-      setAvailableReleases(pool);
 
       const preferredPlayer = useAppStore.getState().preferredPlayer;
       console.log(`[Details] 🚀 Quick Play handing off to VLC Service (preferredPlayer: ${preferredPlayer})`);
@@ -625,6 +617,7 @@ export default function DetailsScreen() {
           <View style={styles.actionRowContainer}>
             <Pressable
               focusable={true}
+              hasTVPreferredFocus={true}
               onFocus={() => setFocusedQuickPlay(true)}
               onBlur={() => setFocusedQuickPlay(false)}
               style={[
@@ -750,9 +743,12 @@ export default function DetailsScreen() {
                   <Text style={styles.subSectionTitle}>SEASONS</Text>
                   <Pressable
                     focusable={true}
+                    onFocus={() => setFocusedBulkDownload(true)}
+                    onBlur={() => setFocusedBulkDownload(false)}
                     style={({ pressed }) => [
                       styles.bulkDownloadBtn,
                       pressed && styles.bulkDownloadBtnPressed,
+                      focusedBulkDownload && styles.bulkDownloadBtnFocused,
                     ]}
                     onPress={() => {
                       const sNum =
@@ -1376,6 +1372,12 @@ const styles = StyleSheet.create({
   },
   bulkDownloadBtnPressed: {
     backgroundColor: 'rgba(229, 9, 20, 0.35)',
+  },
+  bulkDownloadBtnFocused: {
+    borderColor: '#ffffff',
+    borderWidth: 2,
+    backgroundColor: '#e50914',
+    transform: [{ scale: 1.05 }],
   },
   bulkDownloadBtnText: {
     color: '#ffffff',

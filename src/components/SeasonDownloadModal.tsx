@@ -166,6 +166,7 @@ export const SeasonDownloadModal: React.FC<SeasonDownloadModalProps> = ({
   );
   const [isEnqueuing, setIsEnqueuing] = useState(false);
   const [focusedEditionKey, setFocusedEditionKey] = useState<string | null>(null);
+  const [focusedControl, setFocusedControl] = useState<string | null>(null);
 
   // Sync selectedSeason if initialSeason changes
   React.useEffect(() => {
@@ -244,11 +245,14 @@ export const SeasonDownloadModal: React.FC<SeasonDownloadModalProps> = ({
             </View>
 
             <Pressable
+              focusable={true}
+              onFocus={() => setFocusedControl('close')}
+              onBlur={() => setFocusedControl(null)}
               hitSlop={10}
               onPress={onClose}
               disabled={isEnqueuing}
-              style={styles.closeBtn}>
-              <Ionicons name="close" size={20} color="#8a8a9e" />
+              style={[styles.closeBtn, focusedControl === 'close' && styles.closeBtnFocused]}>
+              <Ionicons name="close" size={20} color={focusedControl === 'close' ? '#ffffff' : '#8a8a9e'} />
             </Pressable>
           </View>
 
@@ -261,12 +265,20 @@ export const SeasonDownloadModal: React.FC<SeasonDownloadModalProps> = ({
                 contentContainerStyle={styles.seasonTabsContainer}>
                 {availableSeasons.map((s) => {
                   const isActive = selectedSeason === s;
+                  const isFocusedTab = focusedControl === `season_${s}`;
                   return (
                     <Pressable
                       key={s}
+                      focusable={true}
+                      onFocus={() => setFocusedControl(`season_${s}`)}
+                      onBlur={() => setFocusedControl(null)}
                       onPress={() => setSelectedSeason(s)}
-                      style={[styles.seasonTab, isActive && styles.seasonTabActive]}>
-                      <Text style={[styles.seasonTabText, isActive && styles.seasonTabTextActive]}>
+                      style={[
+                        styles.seasonTab,
+                        isActive && styles.seasonTabActive,
+                        isFocusedTab && styles.seasonTabFocused,
+                      ]}>
+                      <Text style={[styles.seasonTabText, (isActive || isFocusedTab) && styles.seasonTabTextActive]}>
                         Season {s}
                       </Text>
                     </Pressable>
@@ -295,7 +307,7 @@ export const SeasonDownloadModal: React.FC<SeasonDownloadModalProps> = ({
                 <Text style={styles.loadingText}>Adding episodes to queue...</Text>
               </View>
             ) : editions.length > 0 ? (
-              editions.map((ed) => {
+              editions.map((ed, idx) => {
                 const isFocused = focusedEditionKey === ed.key;
                 const is4K = ed.quality.includes('4K');
                 const is1080p = ed.quality.includes('1080');
@@ -360,6 +372,7 @@ export const SeasonDownloadModal: React.FC<SeasonDownloadModalProps> = ({
 
                       <Pressable
                         focusable={true}
+                        hasTVPreferredFocus={idx === 0}
                         onFocus={() => setFocusedEditionKey(ed.key)}
                         onBlur={() => setFocusedEditionKey((p) => (p === ed.key ? null : p))}
                         onPress={() => handleQueueEdition(ed)}
@@ -390,10 +403,15 @@ export const SeasonDownloadModal: React.FC<SeasonDownloadModalProps> = ({
           {/* Footer Close */}
           <View style={styles.footer}>
             <Pressable
-              style={styles.cancelBtn}
+              focusable={true}
+              onFocus={() => setFocusedControl('cancel')}
+              onBlur={() => setFocusedControl(null)}
+              style={[styles.cancelBtn, focusedControl === 'cancel' && styles.cancelBtnFocused]}
               onPress={onClose}
               disabled={isEnqueuing}>
-              <Text style={styles.cancelBtnText}>Dismiss</Text>
+              <Text style={[styles.cancelBtnText, focusedControl === 'cancel' && { color: '#ffffff' }]}>
+                Dismiss
+              </Text>
             </Pressable>
           </View>
         </View>
@@ -466,6 +484,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#1c1c28',
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: 'transparent',
+  },
+  closeBtnFocused: {
+    borderColor: '#ffffff',
+    backgroundColor: '#e50914',
+    transform: [{ scale: 1.15 }],
   },
   seasonTabsWrapper: {
     borderBottomWidth: 1,
@@ -488,6 +513,12 @@ const styles = StyleSheet.create({
   seasonTabActive: {
     backgroundColor: '#e50914',
     borderColor: '#e50914',
+  },
+  seasonTabFocused: {
+    borderColor: '#ffffff',
+    borderWidth: 2,
+    backgroundColor: '#e50914',
+    transform: [{ scale: 1.08 }],
   },
   seasonTabText: {
     fontSize: 12,
@@ -650,8 +681,13 @@ const styles = StyleSheet.create({
     opacity: 0.8,
   },
   queueBtnFocused: {
-    borderWidth: 2,
+    borderWidth: 2.5,
     borderColor: '#ffffff',
+    transform: [{ scale: 1.04 }],
+    shadowColor: '#ffffff',
+    shadowOpacity: 0.8,
+    shadowRadius: 8,
+    elevation: 8,
   },
   queueBtnText: {
     fontSize: 12,
@@ -691,6 +727,13 @@ const styles = StyleSheet.create({
   cancelBtn: {
     paddingHorizontal: 16,
     paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: 'transparent',
+  },
+  cancelBtnFocused: {
+    borderColor: '#e50914',
+    backgroundColor: 'rgba(229, 9, 20, 0.15)',
   },
   cancelBtnText: {
     fontSize: 13,

@@ -4,11 +4,11 @@ import {
   View,
   Text,
   StyleSheet,
-  TouchableOpacity,
+  Pressable,
   Dimensions,
   Animated,
 } from 'react-native';
-import { Sparkles, Play, ShieldCheck, X, CheckCircle2, ExternalLink, ShieldAlert, TriangleAlert } from 'lucide-react-native';
+import { Ionicons } from '@expo/vector-icons';
 import * as WebBrowser from 'expo-web-browser';
 import { adService, AdPromptRequest, MONETAG_DIRECT_URL } from '@/services/ads';
 
@@ -21,6 +21,7 @@ export const RewardedAdModal: React.FC = () => {
   const [isPlayingAd, setIsPlayingAd] = useState(false);
   const [countdown, setCountdown] = useState(COUNTDOWN_SECONDS);
   const [isCompleted, setIsCompleted] = useState(false);
+  const [focusedBtn, setFocusedBtn] = useState<string | null>(null);
 
   const progressAnim = useRef(new Animated.Value(0)).current;
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -111,12 +112,17 @@ export const RewardedAdModal: React.FC = () => {
           <View style={styles.card}>
             {/* Header Icon */}
             <View style={styles.iconCircle}>
-              <Sparkles size={32} color="#f5c518" />
+              <Ionicons name="sparkles" size={32} color="#f5c518" />
             </View>
 
-            <TouchableOpacity style={styles.closeBtn} onPress={handleCancel}>
-              <X size={20} color="#8a8a9a" />
-            </TouchableOpacity>
+            <Pressable
+              focusable={true}
+              onFocus={() => setFocusedBtn('close')}
+              onBlur={() => setFocusedBtn(null)}
+              style={[styles.closeBtn, focusedBtn === 'close' && styles.closeBtnFocused]}
+              onPress={handleCancel}>
+              <Ionicons name="close" size={20} color={focusedBtn === 'close' ? '#ffffff' : '#8a8a9a'} />
+            </Pressable>
 
             <Text style={styles.title}>Unlock Video Playback</Text>
             <Text style={styles.mediaTitle} numberOfLines={1}>
@@ -130,18 +136,18 @@ export const RewardedAdModal: React.FC = () => {
             {/* Perks Row */}
             <View style={styles.perksContainer}>
               <View style={styles.perkItem}>
-                <Play size={14} color="#e50914" />
+                <Ionicons name="play" size={14} color="#e50914" />
                 <Text style={styles.perkText}>Instant Unlock</Text>
               </View>
               <View style={styles.perkItem}>
-                <ShieldCheck size={15} color="#46d369" />
+                <Ionicons name="shield-checkmark" size={15} color="#46d369" />
                 <Text style={styles.perkText}>10Gbps 4K Stream</Text>
               </View>
             </View>
 
             {/* Safety & Responsibility Advisory */}
             <View style={styles.safetyBox}>
-              <TriangleAlert size={16} color="#f59e0b" style={{ marginTop: 2 }} />
+              <Ionicons name="warning" size={16} color="#f59e0b" style={{ marginTop: 2 }} />
               <View style={styles.safetyTextWrap}>
                 <Text style={styles.safetyHeader}>Safety & User Responsibility</Text>
                 <Text style={styles.safetyText}>
@@ -151,14 +157,27 @@ export const RewardedAdModal: React.FC = () => {
             </View>
 
             {/* Action Buttons */}
-            <TouchableOpacity style={styles.watchBtn} onPress={startAdPlayback}>
-              <Play size={18} color="#ffffff" fill="#ffffff" />
+            <Pressable
+              focusable={true}
+              hasTVPreferredFocus={true}
+              onFocus={() => setFocusedBtn('watch')}
+              onBlur={() => setFocusedBtn(null)}
+              style={[styles.watchBtn, focusedBtn === 'watch' && styles.btnFocused]}
+              onPress={startAdPlayback}>
+              <Ionicons name="play" size={18} color="#ffffff" />
               <Text style={styles.watchBtnText}>Watch Sponsor Clip (25s)</Text>
-            </TouchableOpacity>
+            </Pressable>
 
-            <TouchableOpacity style={styles.cancelBtn} onPress={handleCancel}>
-              <Text style={styles.cancelBtnText}>Maybe Later</Text>
-            </TouchableOpacity>
+            <Pressable
+              focusable={true}
+              onFocus={() => setFocusedBtn('cancel')}
+              onBlur={() => setFocusedBtn(null)}
+              style={[styles.cancelBtn, focusedBtn === 'cancel' && styles.cancelBtnFocused]}
+              onPress={handleCancel}>
+              <Text style={[styles.cancelBtnText, focusedBtn === 'cancel' && { color: '#ffffff' }]}>
+                Maybe Later
+              </Text>
+            </Pressable>
           </View>
         ) : (
           // 2. Sponsor Ad Experience
@@ -187,7 +206,7 @@ export const RewardedAdModal: React.FC = () => {
               {!isCompleted ? (
                 <View style={styles.adActiveCard}>
                   <View style={styles.radarPulse}>
-                    <ExternalLink size={36} color="#e50914" />
+                    <Ionicons name="open-outline" size={36} color="#e50914" />
                   </View>
                   <Text style={styles.adActiveTitle}>Sponsor Offer In Progress</Text>
                   <Text style={styles.adActiveSub}>
@@ -195,13 +214,18 @@ export const RewardedAdModal: React.FC = () => {
                   </Text>
                   <Text style={styles.adActiveCounter}>{countdown}s</Text>
 
-                  <TouchableOpacity style={styles.reopenBtn} onPress={openSponsorOffer}>
-                    <ExternalLink size={16} color="#ffffff" />
+                  <Pressable
+                    focusable={true}
+                    onFocus={() => setFocusedBtn('reopen')}
+                    onBlur={() => setFocusedBtn(null)}
+                    style={[styles.reopenBtn, focusedBtn === 'reopen' && styles.btnFocused]}
+                    onPress={openSponsorOffer}>
+                    <Ionicons name="open-outline" size={16} color="#ffffff" />
                     <Text style={styles.reopenBtnText}>Open Sponsor Offer</Text>
-                  </TouchableOpacity>
+                  </Pressable>
 
                   <View style={styles.activeSafetyBox}>
-                    <ShieldAlert size={14} color="#f59e0b" />
+                    <Ionicons name="shield-outline" size={14} color="#f59e0b" />
                     <Text style={styles.activeSafetyText}>
                       Do NOT download any APKs or accept browser permissions. Simply wait for the countdown to unlock playback.
                     </Text>
@@ -217,7 +241,7 @@ export const RewardedAdModal: React.FC = () => {
                         borderColor: 'rgba(70, 211, 105, 0.3)',
                       },
                     ]}>
-                    <CheckCircle2 size={44} color="#46d369" />
+                    <Ionicons name="checkmark-circle" size={44} color="#46d369" />
                   </View>
                   <Text style={[styles.adActiveTitle, { color: '#ffffff' }]}>Playback Unlocked!</Text>
                   <Text style={styles.adActiveSub}>
@@ -245,10 +269,16 @@ export const RewardedAdModal: React.FC = () => {
             {/* Completion Claim Button */}
             <View style={styles.adFooter}>
               {isCompleted ? (
-                <TouchableOpacity style={styles.claimBtn} onPress={handleClaimReward}>
-                  <Play size={20} color="#000000" fill="#000000" />
+                <Pressable
+                  focusable={true}
+                  hasTVPreferredFocus={true}
+                  onFocus={() => setFocusedBtn('claim')}
+                  onBlur={() => setFocusedBtn(null)}
+                  style={[styles.claimBtn, focusedBtn === 'claim' && styles.claimBtnFocused]}
+                  onPress={handleClaimReward}>
+                  <Ionicons name="play" size={20} color="#000000" />
                   <Text style={styles.claimBtnText}>Start Video Stream</Text>
-                </TouchableOpacity>
+                </Pressable>
               ) : (
                 <Text style={styles.waitText}>Please wait for countdown to finish to start playback</Text>
               )}
@@ -300,6 +330,13 @@ const styles = StyleSheet.create({
     padding: 6,
     borderRadius: 20,
     backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderWidth: 1.5,
+    borderColor: 'transparent',
+  },
+  closeBtnFocused: {
+    borderColor: '#ffffff',
+    backgroundColor: '#e50914',
+    transform: [{ scale: 1.15 }],
   },
   title: {
     fontSize: 20,
@@ -396,11 +433,19 @@ const styles = StyleSheet.create({
   },
   cancelBtn: {
     paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: 'transparent',
   },
   cancelBtnText: {
     color: '#707080',
     fontSize: 12,
     fontWeight: '500',
+  },
+  cancelBtnFocused: {
+    borderColor: '#e50914',
+    backgroundColor: 'rgba(229, 9, 20, 0.15)',
   },
   adContainer: {
     width: Math.min(width - 32, 420),
@@ -569,5 +614,23 @@ const styles = StyleSheet.create({
     color: '#707080',
     fontSize: 12,
     textAlign: 'center',
+  },
+  btnFocused: {
+    borderColor: '#ffffff',
+    borderWidth: 2.5,
+    transform: [{ scale: 1.04 }],
+    shadowColor: '#ffffff',
+    shadowOpacity: 0.9,
+    shadowRadius: 10,
+    elevation: 10,
+  },
+  claimBtnFocused: {
+    borderColor: '#ffffff',
+    borderWidth: 3,
+    transform: [{ scale: 1.05 }],
+    shadowColor: '#46d369',
+    shadowOpacity: 0.9,
+    shadowRadius: 12,
+    elevation: 12,
   },
 });

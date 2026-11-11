@@ -14,6 +14,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v2.0.6] - 2026-11-11
+
+### 🚀 Highlights
+- **Android TV & 10-Foot UI Focus Traps Elimination**:
+  - **Focusable Modal Controls**: Converted all interactive buttons in `UpdateModal`, `RewardedAdModal`, and `SeasonDownloadModal` to `Pressable focusable={true}` with initial `hasTVPreferredFocus={true}` and glowing focus rings (`#ffffff` borders and scale feedback), completely eliminating TV remote lockups.
+  - **TV Sidebar History Fix**: Replaced `router.push` with `router.replace` on tab transitions to prevent remote `BACK` button from looping through historical tab clicks; removed sticky home preferred focus so focus flows naturally to content.
+  - **Details Initial Focus**: Initial focus defaults directly to the primary Quick Play / Resume button instead of the floating Back icon in the top-left corner; added visual D-pad focus states to the Season Bulk Download button.
+  - **TV Settings Focus**: Added remote D-pad focus support and outlines to Player selection (VLC, MX Player, Just Player, System Chooser), skip duration options (5s, 10s, 15s, 30s), Update Checker, and Clear History.
+- **Android Scoped Storage Directory Creation Fix**:
+  - Added native `@ReactMethod fun ensureDirectory` in `PlayerLauncherModule.kt` using `File.mkdirs()` directly, eliminating Expo FileSystem's `canWrite()` `IOException` on clean installs where `/storage/emulated/0/Download/CineBox` did not yet exist.
+- **Download Byte Resumption & Storage Optimization**:
+  - Fixed byte retention in `downloader.ts` by persisting and passing `item.resumeData` to `createDownloadResumable`, allowing paused downloads to resume from existing byte offsets rather than restarting from 0.
+  - Implemented deterministic notification ID hashing based on item IDs to prevent series episode notifications from overwriting each other in the Android system shade.
+  - Added stale APK cache cleanup in `updater.ts` before downloading updates, preventing storage leaks.
+- **Lean Native Bundling & Performance**:
+  - Removed dead dependencies (`expo-video`, `react-native-web-webview`, `lucide-react-native`) and deleted obsolete store `usePlayerStore.ts`, stripping unused native ExoPlayer/Media3 overhead.
+- **Unit Test Suite**:
+  - Introduced fast unit test suite with `bun test` covering season/episode parsing, title sanitization, stream URL encoding, and GreenMotors payload decoding.
+
+---
+
 ## [v2.0.5] - 2026-11-02
 
 ### 🚀 Highlights
